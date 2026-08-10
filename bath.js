@@ -116,6 +116,17 @@ function appendLog(entry) {
 
 /* ----------------------------------------------------------------- rendu */
 
+// La régularité, en une ligne discrète sur l'écran d'accueil — pas un tableau
+// de bord. Invisible tant qu'il n'y a rien à raconter : un visiteur qui n'a
+// jamais consigné de bain ne doit voir ni zéro ni case vide, juste rien.
+function renderHomeStreak() {
+  const el = $('homeStreak');
+  if (!el) return;
+  const phrase = statsPhrase(bathStats(readLog()));
+  el.textContent = phrase;
+  el.hidden = !phrase;
+}
+
 function renderPlan() {
   const plan = bathPlan(temp);
   if (minutes == null) minutes = plan ? plan.minutes : 5;
@@ -299,6 +310,7 @@ function keepBath() {
   lastBath = null;
   $('afterKeep').disabled = true;
   $('afterStats').textContent = statsPhrase(bathStats(readLog()));
+  renderHomeStreak();   // l'écran d'accueil, retrouvé en sortant, doit déjà le savoir
   buzz(40);
 }
 
@@ -352,6 +364,7 @@ export function setWaterTemperature(value) {
 
 export function initBath() {
   renderPlan();
+  renderHomeStreak();
 
   // Le bouton mène aux consignes, jamais directement à l'eau : la règle « jamais
   // seul » se lit là, en tête de liste, juste avant le maintien de confirmation.

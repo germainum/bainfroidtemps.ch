@@ -10,6 +10,7 @@
 
 import { initBath, setBathPlace, setWaterTemperature } from './bath.js';
 import { renderLakeMap } from './lakemap.js';
+import { initOnboarding } from './onboarding.js';
 import {
   CFG, SPOTS, asArray, bestReading, greeting, isStale, mood, nextIndex, parseMeasuredStations,
   nearestSpot, parseSeries, parseSnapshot, parseStationMeta, snapshotAge,
@@ -636,6 +637,7 @@ function init() {
 
   enableSwipe();
   initBath();
+  initOnboarding();
   locateIfAllowed();
   maybeShowInstallHint();
   // Après l'invite : sa présence change la hauteur à réserver.

@@ -209,6 +209,11 @@
       </li>
     </ul>
 
+    <!-- Invisible tant qu'aucun bain n'est consigné : rien à raconter à qui
+         découvre l'app. La régularité, jamais la durée ni le froid — voir
+         `statsPhrase` dans sources.js. -->
+    <p class="streak" id="homeStreak" hidden></p>
+
     <div class="card">
       <p class="card-title">Mon temps de présence</p>
       <div class="bath-stepper">
@@ -444,6 +449,10 @@
     </p>
 
     <p class="micro-note">
+      <button type="button" id="reviewSafety" class="link-btn">Consignes et contre-indications</button>
+    </p>
+
+    <p class="micro-note">
       <a href="https://www.hydrodaten.admin.ch/" target="_blank" rel="noopener">OFEV</a>
       via <a href="https://api.existenz.ch/" target="_blank" rel="noopener">existenz.ch</a>,
       simulation <a href="https://www.alplakes.eawag.ch/" target="_blank" rel="noopener">Alplakes&nbsp;/&nbsp;Eawag</a>,
@@ -457,6 +466,50 @@
   </footer>
 
   <div class="toast" id="toast" hidden></div>
+</div>
+
+<!-- Sécurité, avant tout le reste : montrée une fois à l'ouverture, et
+     rappelable depuis le pied de page. Deux écrans, jamais un diagnostic —
+     l'app informe des risques, elle ne certifie jamais que vous pouvez vous
+     baigner : aucune case « je n'ai aucune contre-indication » n'existe ici. -->
+<div class="onboarding" id="onboarding" role="dialog" aria-label="Consignes de sécurité" data-step="safety" hidden>
+
+  <div class="onb-step" data-step="safety">
+    <p class="timer-phase">Avant de commencer</p>
+    <p class="onb-lead">Le bain froid comporte des risques réels. Quatre choses à savoir avant la première fois.</p>
+
+    <ul class="brief-list">
+      <li><b>Choc thermique.</b> Le souffle se coupe dans les premières secondes — c'est normal, il repart. Entrez progressivement, jamais la tête la première.</li>
+      <li><b>Jamais seul.</b> Quelqu'un vous accompagne et vous voit, à chaque immersion.</li>
+      <li><b>Après-coup (afterdrop).</b> Le corps continue de se refroidir après la sortie. Vêtements secs et chauds d'abord ; douche brûlante ou sauna, seulement après.</li>
+      <li><b>Sortie immédiate</b> à la moindre euphorie inhabituelle ou au premier tremblement violent.</li>
+    </ul>
+
+    <button type="button" id="onbNext" class="cta">Continuer</button>
+  </div>
+
+  <div class="onb-step" data-step="health">
+    <p class="timer-phase">Une chose à vérifier</p>
+    <p class="onb-lead">
+      Problème cardiaque, hypertension, grossesse, épilepsie, syndrome de Raynaud, ou le moindre doute sur votre
+      état de santé&nbsp;: parlez-en à un médecin avant de commencer. Cette app n'est pas un dispositif médical
+      et ne remplace pas cet avis.
+    </p>
+
+    <p class="onb-emergency">En cas d'urgence en Suisse&nbsp;: <b>144</b> (ambulance) ou <b>112</b>.</p>
+
+    <div class="timer-actions">
+      <button type="button" id="onbDone" class="cta">Compris, découvrir l'app</button>
+      <button type="button" id="onbBack" class="link-btn">Revoir les consignes</button>
+    </div>
+
+    <p class="brief-sources">
+      D'après <a href="https://www.slrg.ch/fr/conseils-pour-la-nage-en-eau-froide" target="_blank" rel="noopener">la SSS</a>
+      et <a href="https://www.wta.org/go-outside/trail-smarts/how-to-swim-safely-in-cold-water-lakes" target="_blank" rel="noopener">la WTA</a>.
+      Ne remplace pas un avis médical.
+    </p>
+  </div>
+
 </div>
 
 <!-- Minuteur plein écran : consignes et confirmation, puis l'immersion. -->

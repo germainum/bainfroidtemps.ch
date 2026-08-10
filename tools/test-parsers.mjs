@@ -848,6 +848,24 @@ test('la phrase de bilan reste une habitude, pas un score', () => {
   assert.equal(statsPhrase(bathStats([], NOW)), '');
 });
 
+test('statsPhrase ne récompense jamais la durée ni le froid, même sur un extrême', () => {
+  // Un bain long et glacial ne doit pas produire une phrase différente d'un
+  // bain bref et tiède : seule la régularité — présence, jours consécutifs —
+  // peut varier la formule. C'est la garantie testée ici, pas un hasard de
+  // formulation : la mécanique ne doit jamais donner de raison de pousser plus
+  // loin la durée ou le froid pour « mieux » réussir sa série.
+  const scénarios = [
+    bathStats([bain(0, 45, 1.5), bain(1, 60, 0.5)], NOW),        // long et glacial
+    bathStats([bain(0, 3, 22)], NOW),                             // bref et tiède
+    bathStats([bain(0), bain(1), bain(2), bain(3), bain(4)], NOW), // longue série
+  ];
+  for (const s of scénarios) {
+    const p = statsPhrase(s);
+    assert.ok(!/\d+([.,]\d+)?\s*°|degr[ée]|minutes?\b|record|plus (froid|long|dur|fort)/i.test(p),
+      `phrase suspecte de récompenser l’escalade : « ${p} »`);
+  }
+});
+
 test('le texte de partage dit la donnée, sans triomphe', () => {
   assert.equal(shareText({ minutes: 20, temp: 12.4, place: 'Vevey' }), '20 min à 12,4° — Vevey, lac Léman.');
   assert.equal(shareText({ minutes: 8, temp: 9 }), '8 min à 9,0° dans le Léman.');

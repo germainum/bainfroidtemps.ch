@@ -321,6 +321,28 @@ body {
 
 .facts b { display: block; color: var(--ink); font-size: 12.5px; font-weight: 600; }
 
+/* La régularité, en une ligne — jamais un chiffre isolé mis en avant comme un
+   score, jamais de badge. Le pastille d'accent est la seule insistance. */
+.streak {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: -6px 0 20px;
+  font-size: 13.5px;
+  color: var(--ink-soft);
+}
+
+.streak::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex: none;
+}
+
+.streak[hidden] { display: none; }
+
 /* ---------------------------------------------------------------- cartes */
 
 .card {
@@ -436,6 +458,11 @@ body {
   cursor: pointer;
   box-shadow: 0 6px 18px rgba(123, 92, 245, .28);
 }
+
+/* Sans cette règle, le focus programmatique (l'onboarding porte le focus sur
+   son premier bouton à l'ouverture) retombe sur l'anneau noir par défaut du
+   navigateur, anguleux sur une pilule. */
+.cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 
 .cta-icon { width: 14px; height: 14px; fill: currentColor; }
 
@@ -715,6 +742,46 @@ body {
   line-height: 1.6;
   color: var(--ink-soft);
 }
+
+/* ------------------------------------------------------ sécurité d'accueil */
+
+/* Même position, même fond que le minuteur : c'est la même idée de dialogue
+   plein écran, réutilisée. Mais sans le fond profond de l'immersion — on lit
+   une information, on ne traverse pas un moment. */
+.onboarding {
+  position: fixed;
+  inset: 0;
+  z-index: 11;
+  display: grid;
+  place-items: center;
+  padding: calc(env(safe-area-inset-top) + 24px) 22px calc(env(safe-area-inset-bottom) + 24px);
+  background: var(--paper);
+  background-image: radial-gradient(120% 60% at 80% -20%, var(--accent-dim) 0%, transparent 70%);
+  text-align: center;
+  overflow-y: auto;
+}
+
+.onboarding[hidden] { display: none; }
+
+.onb-step { display: none; width: 100%; max-width: 420px; }
+.onboarding[data-step="safety"] .onb-step[data-step="safety"],
+.onboarding[data-step="health"] .onb-step[data-step="health"] { display: block; }
+
+.onb-lead {
+  margin: 10px 0 22px;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--ink-soft);
+}
+
+.onb-emergency {
+  margin: 0 0 22px;
+  font-size: 14px;
+}
+
+.onb-emergency b { font-size: 15px; }
+
+.onb-step .cta { margin-bottom: 14px; }
 
 /* ------------------------------------------------- consignes et minuteur */
 

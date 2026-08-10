@@ -60,6 +60,24 @@ vertical. Aux extrémités, il s'arrête plutôt que de boucler.
 Pour ajouter un lieu, complétez la constante `SPOTS` dans `sources.js` : le point
 doit se situer **sur l'eau**, sinon la simulation ne renvoie rien.
 
+## Sécurité : accueil et contre-indications
+
+Au **premier lancement**, un écran de sécurité en deux temps s'ouvre avant tout
+le reste (`onboarding.js`) : les quatre risques de l'eau froide — choc thermique,
+jamais seul, afterdrop, sortie immédiate — puis un écran de **contre-indications**
+(cardiaque, tension, grossesse, épilepsie, Raynaud) qui renvoie vers un médecin,
+avec les numéros d'urgence suisses. L'app **n'est pas un dispositif médical** et
+ne le prétend nulle part : il n'existe **aucune case « je suis apte »** —
+s'auto-certifier donnerait une assurance que rien ici ne peut garantir. Un flag
+`leman.v2.onboarded` évite de le remontrer, et le lien « Consignes et
+contre-indications » en pied de page le rouvre à volonté.
+
+La **régularité** apparaît sur l'écran d'accueil, en une ligne, une fois un
+premier bain consigné — `statsPhrase()`, jamais un chiffre de durée ni de froid
+mis en avant. Un test dédié (`tools/test-parsers.mjs`) vérifie qu'aucun scénario,
+même un bain long et glacial, ne produit une phrase récompensant l'escalade :
+c'est la contrainte du §5 du cahier des charges, testée plutôt que promise.
+
 ## Minuteur de bain froid
 
 La durée conseillée découle de la température de l'eau : **une minute par degré**,
@@ -344,13 +362,14 @@ utile depuis l'iPhone lui-même, il liste les appels réussis ou échoués.
 | `sources.js` | URL, analyse des réponses, choix de la valeur — sans DOM ni réseau |
 | `app.js` | requêtes, cache local, rendu, cycle de vie |
 | `bath.js` | minuteur : consignes, maintien de confirmation, phases, session |
+| `onboarding.js` | écran de sécurité et contre-indications, au premier lancement |
 | `lakemap.js` | carte du lac : silhouette, points, températures |
 | `sw.js` | service worker : réseau d'abord, cache en secours |
 | `manifest.webmanifest` | nom, icônes, mode plein écran |
 | `robots.txt`, `sitemap.xml` | référencement : autorisation et URL canonique |
 | `og-image.png` | vignette de partage, 1200 × 630 |
 | `tools/build-model-data.mjs` | précalcul de `data/model.json` dans la CI |
-| `tools/test-parsers.mjs` | 99 tests sur `sources.js` |
+| `tools/test-parsers.mjs` | 100 tests sur `sources.js` |
 | `tools/check-sources.mjs` | vérification des API en conditions réelles |
 | `tools/make-icons.py` | génération des icônes PNG |
 | `tools/make-og-image.py` | génération de la vignette de partage |
