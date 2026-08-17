@@ -131,11 +131,9 @@ body {
 /* ------------------------------------------------------------ en-tête */
 
 .screen {
-  min-height: 100vh;
-  min-height: 100dvh;
   padding-top: calc(env(safe-area-inset-top) + 16px);
-  /* Même réserve qu'en pied de page : la carte de durée, centrée par marge
-     automatique, ne doit pas se retrouver sous le bandeau fixe. */
+  /* Même réserve qu'en pied de page : la carte de durée ne doit pas se
+     retrouver sous le bandeau fixe. */
   padding-bottom: calc(var(--dock-h) + 12px);
   display: flex;
   flex-direction: column;
@@ -372,9 +370,7 @@ body {
   color: var(--ink-soft);
 }
 
-/* L'écran ne porte plus qu'une carte : elle flotte entre la lecture chiffrée et
-   le bouton, plutôt que de laisser tout le vide s'accumuler d'un seul côté. */
-.screen .card { margin: auto 0; }
+.screen .card { margin: 28px 0 0; }
 
 /* Réglage de la durée : moins, valeur, plus, centrés sur une même ligne. */
 .bath-stepper {
@@ -1195,19 +1191,18 @@ body.timing { overflow: hidden; }
 
 /* En dessous, la fenêtre EST l'écran de l'app. Au-delà, elle déborde large-
    ment d'un contenu pensé pour un téléphone : sans traitement, la colonne
-   flotte collée en haut d'un vide, et l'écran de préparation — dont la
-   hauteur force 100 % de la fenêtre pour centrer verticalement la carte de
-   durée sur un téléphone — exagère ce vide d'autant plus que la fenêtre est
-   haute. On présente plutôt l'app comme un panneau posé sur le même violet
-   pâle que la vague d'accueil, et on rend à l'écran de préparation sa
-   hauteur naturelle. Le minuteur et l'introduction (`.timer`, `.onboarding`)
-   n'ont pas ce problème : déjà des recouvrements plein écran qui centrent
-   une colonne à 420px, ils restent inchangés. */
+   flotte collée en haut d'un vide. On présente plutôt l'app comme un
+   panneau posé sur le même violet pâle que la vague d'accueil, plus large
+   pour que le chiffre, la carte du lac et la courbe (déjà fluides, en
+   `width: 100%`) profitent vraiment de la place. Le minuteur et
+   l'introduction (`.timer`, `.onboarding`) n'ont pas ce problème : déjà des
+   recouvrements plein écran qui centrent une colonne à 420px, ils restent
+   inchangés. */
 @media (min-width: 720px) {
   body { background: var(--accent-soft); }
 
   .app {
-    max-width: 480px;
+    max-width: 680px;
     margin: 48px auto;
     background: var(--card);
     border-radius: calc(var(--radius) + 6px);
@@ -1216,9 +1211,14 @@ body.timing { overflow: hidden; }
   }
 
   .screen {
-    min-height: auto;
     padding-top: 32px;
   }
+
+  /* Le chiffre reste plafonné à 4.4rem par le clamp() mobile (pensé pour la
+     largeur d'un téléphone, pas d'une fenêtre) : sur un panneau à 680px, il
+     resterait de la même taille que sur un petit écran, alors que tout
+     l'espace autour de lui a grandi. */
+  .readout-value { font-size: 5.4rem; }
 
   /* Le bandeau reste fixe — le geste de lancement doit rester joignable
      depuis la carte du lac et la courbe plus bas, pas seulement depuis
@@ -1228,7 +1228,7 @@ body.timing { overflow: hidden; }
     left: 50%;
     right: auto;
     width: 100%;
-    max-width: 480px;
+    max-width: 680px;
     transform: translateX(-50%);
     background: linear-gradient(to top, var(--card) 60%, transparent);
   }
