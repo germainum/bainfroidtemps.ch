@@ -1190,3 +1190,46 @@ body.timing { overflow: hidden; }
 }
 
 .readout-value { -webkit-user-select: none; user-select: none; }
+
+/* --------------------------------------------------------- bureau (≥ 720px) */
+
+/* En dessous, la fenêtre EST l'écran de l'app. Au-delà, elle déborde large-
+   ment d'un contenu pensé pour un téléphone : sans traitement, la colonne
+   flotte collée en haut d'un vide, et l'écran de préparation — dont la
+   hauteur force 100 % de la fenêtre pour centrer verticalement la carte de
+   durée sur un téléphone — exagère ce vide d'autant plus que la fenêtre est
+   haute. On présente plutôt l'app comme un panneau posé sur le même violet
+   pâle que la vague d'accueil, et on rend à l'écran de préparation sa
+   hauteur naturelle. Le minuteur et l'introduction (`.timer`, `.onboarding`)
+   n'ont pas ce problème : déjà des recouvrements plein écran qui centrent
+   une colonne à 420px, ils restent inchangés. */
+@media (min-width: 720px) {
+  body { background: var(--accent-soft); }
+
+  .app {
+    max-width: 480px;
+    margin: 48px auto;
+    background: var(--card);
+    border-radius: calc(var(--radius) + 6px);
+    box-shadow: 0 30px 70px rgba(27, 27, 47, .18);
+    overflow: hidden;
+  }
+
+  .screen {
+    min-height: auto;
+    padding-top: 32px;
+  }
+
+  /* Le bandeau reste fixe — le geste de lancement doit rester joignable
+     depuis la carte du lac et la courbe plus bas, pas seulement depuis
+     l'écran de préparation — mais recentré sur la largeur du panneau
+     plutôt que sur celle, bien plus large, de la fenêtre. */
+  .cta-dock {
+    left: 50%;
+    right: auto;
+    width: 100%;
+    max-width: 480px;
+    transform: translateX(-50%);
+    background: linear-gradient(to top, var(--card) 60%, transparent);
+  }
+}
