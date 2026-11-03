@@ -1,49 +1,42 @@
-/* Température du Léman
+/* Bains Froids Léman
  *
- * Identité reprise d'une maquette d'app de réservation : violet et lilas, fonds
- * clairs, cartes blanches très arrondies, icônes en filet, et un histogramme
- * d'affluence — devenu ici « quand y aller », qui répond à la vraie question
- * d'un baigneur. La température ne colore plus le fond : elle colore les barres
- * et les points de la carte, là où elle se compare.
+ * Refonte : un fond noir, un mur de tuiles en perspective dessiné en WebGL
+ * (wall.js), des cases bordées d'un filet, un serif italique pour la voix et
+ * une chasse fixe pour les chiffres et les repères. Un seul thème — le mur n'a
+ * pas de version claire. Le rouge est réservé aux gestes : le lieu choisi, le
+ * bouton de lancement, la courbe.
  */
 
 :root {
-  --ink: #1b1b2f;
-  --ink-soft: rgba(27, 27, 47, .56);
-  --rule: rgba(27, 27, 47, .1);
-  --paper: #f5f5fb;
-  --card: #ffffff;
-  --accent: #7b5cf5;
+  --ink: #f4f1ea;
+  --ink-soft: rgba(244, 241, 234, .62);
+  --rule: rgba(244, 241, 234, .16);
+  --paper: #0c0c0d;
+  --card: rgba(18, 18, 20, .78);
+  --accent: #f2283c;
   --accent-ink: #ffffff;
-  --accent-soft: #ece7fe;
-  /* Violet assombri : l'accent lui-même manque de contraste sur le lilas pâle. */
-  --accent-ink-on-soft: #4a2fd0;
-  --accent-dim: rgba(123, 92, 245, .16);
+  --accent-soft: rgba(244, 241, 234, .07);
+  --accent-ink-on-soft: #f4f1ea;
+  --accent-dim: rgba(242, 40, 60, .26);
+  --link: #ff7b88;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
 
   --gutter: 20px;
-  --radius: 22px;
-  --radius-sm: 16px;
-  /* Hauteur du bandeau d'action fixe, encoche comprise : sert à réserver la
-     place en bas de page, plutôt que de deviner à chaque endroit qui en a
-     besoin. Valeur de repli seulement — `app.js` la mesure et la corrige, car
-     elle change avec l'encoche, l'invite d'installation et un libellé qui
-     passerait à la ligne. */
-  --dock-h: 90px;
+  --radius: 4px;
+  --radius-sm: 2px;
+  /* Hauteur de l'en-tête fixe, hors encoche. Les ancres s'y calent. */
+  --head-h: 56px;
+  /* Hauteur du bandeau d'action fixe : valeur de repli seulement — `app.js` la
+     mesure et la corrige, car elle change avec l'encoche et l'invite
+     d'installation. */
+  --dock-h: 92px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --ink: #f2f1fa;
-    --ink-soft: rgba(242, 241, 250, .58);
-    --rule: rgba(242, 241, 250, .13);
-    --paper: #13131d;
-    --card: #1e1e2c;
-    --accent: #a48cff;
-    --accent-ink: #17122b;
-    --accent-soft: #272041;
-    --accent-ink-on-soft: #cfc2ff;
-    --accent-dim: rgba(164, 140, 255, .22);
-  }
+@media (min-width: 720px) {
+  :root { --head-h: 112px; }
 }
 
 * { box-sizing: border-box; }
@@ -51,127 +44,177 @@
 html {
   -webkit-text-size-adjust: 100%;
   background: var(--paper);
+  color-scheme: dark;
+  scroll-behavior: smooth;
+  scroll-padding-top: calc(var(--head-h) + env(safe-area-inset-top) + 12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
 }
 
 body {
   margin: 0;
   color: var(--ink);
   background: var(--paper);
-  font: 400 16px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+  font: 400 16px/1.5 var(--sans);
   overflow-x: hidden;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Bandeau lilas en tête, comme l'illustration de la maquette : il habille le
-   haut de l'écran sans que la couleur ne porte d'information. */
-.wash {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 340px;
+/* ------------------------------------------------------------- le mur */
+
+#wall {
+  position: fixed;
+  inset: 0;
   z-index: 0;
-  pointer-events: none;
-  /* Indispensable : la vague ci-dessous dépasse volontairement de 30 % de chaque
-     côté pour pouvoir se déplacer. Sans ce clip, elle élargit le document de
-     près de deux cents pixels — `overflow-x: hidden` sur body masque le
-     débordement à la peinture, mais iOS laisse quand même déplacer la page au
-     doigt, et l'écran se décale entier. */
-  overflow: hidden;
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: var(--paper);
+  /* Le glissement horizontal est pour le mur ; le vertical reste à la page. */
+  touch-action: pan-y;
+}
+
+/* Sans WebGL2, un fond qui rappelle le mur : une grille feinte. */
+body:not(.has-wall) #wall { display: none; }
+body:not(.has-wall) {
   background:
-    radial-gradient(120% 90% at 82% -30%, var(--accent-dim) 0%, transparent 68%),
-    linear-gradient(var(--accent-soft), transparent 92%);
+    radial-gradient(120% 60% at 50% 0%, rgba(242, 40, 60, .12), transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0 63px, rgba(244, 241, 234, .05) 63px 64px),
+    repeating-linear-gradient(90deg, transparent 0 63px, rgba(244, 241, 234, .05) 63px 64px),
+    var(--paper);
+  background-attachment: fixed;
 }
 
-/* Une vague qui traverse le bandeau une fois, à l'ouverture. Elle ne boucle pas :
-   un mouvement perpétuel derrière une valeur qu'on vient lire finirait par gêner. */
-.wash::after {
-  content: '';
-  position: absolute;
-  left: -30%;
-  right: -30%;
-  top: 96px;
-  height: 200px;
-  opacity: 0;
-  /* Les dégradés s'éteignent avant les bords de la boîte. À 100 % d'extension
-     ils y arrivaient encore visibles, et la vague se terminait sur un trait net. */
-  background:
-    radial-gradient(52% 52% at 22% 50%, rgba(255, 255, 255, .5) 0%, transparent 72%),
-    radial-gradient(44% 48% at 70% 46%, var(--accent-dim) 0%, transparent 74%);
-  animation: swell 2.6s cubic-bezier(.25, .6, .3, 1) 120ms 1 both;
-}
-
-@keyframes swell {
-  0%   { opacity: 0;   transform: translateX(-14%) skewY(-1.6deg); }
-  40%  { opacity: .85; }
-  100% { opacity: 0;   transform: translateX(12%) skewY(1.2deg); }
-}
-
-@media (prefers-color-scheme: dark) {
-  .wash::after { mix-blend-mode: screen; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .wash::after { animation: none; display: none; }
-}
-
+/* Le contenu laisse passer le geste : seuls les éléments qui servent captent
+   le pointeur, le reste le rend au mur. */
 .app {
   position: relative;
   z-index: 1;
-  max-width: 620px;
+  max-width: 1120px;
   margin: 0 auto;
-  /* Le bandeau d'action est fixe et flotte par-dessus : sans cette réserve,
-     il couvrirait le pied de page plutôt que de simplement le surplomber.
-     `--dock-h` inclut déjà l'encoche du bas, mesurée avec le bandeau. */
+  pointer-events: none;
   padding: 0 calc(env(safe-area-inset-right) + var(--gutter))
            calc(var(--dock-h) + 20px)
            calc(env(safe-area-inset-left) + var(--gutter));
 }
 
+.app > *:not(.screen) { pointer-events: auto; }
+
 /* ------------------------------------------------------------ en-tête */
 
-.screen {
-  padding-top: calc(env(safe-area-inset-top) + 16px);
-  /* Même réserve qu'en pied de page : la carte de durée ne doit pas se
-     retrouver sous le bandeau fixe. */
-  padding-bottom: calc(var(--dock-h) + 12px);
-  display: flex;
-  flex-direction: column;
+.head {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* Sous les recouvrements (minuteur, consignes : z-index 10) : en dessous de
+     l'immersion, l'en-tête n'a rien à faire. */
+  z-index: 4;
+  padding-top: env(safe-area-inset-top);
+  background: linear-gradient(rgba(12, 12, 13, .92), rgba(12, 12, 13, .78));
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--rule);
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
 }
 
-.top {
+.head a { color: inherit; text-decoration: none; }
+
+.head-main {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: stretch;
+  min-height: 56px;
+}
+
+.head-main > * {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
+  margin: 0;
+  min-width: 0;
 }
 
+.head-main > * + * { border-left: 1px solid var(--rule); }
+
+.head-tag { display: none; }
+.head-temp { display: none; }
+
+.head-mark { padding: 0 12px; }
+
 .mark {
-  width: 40px;
-  height: 28px;
+  width: 34px;
+  height: 24px;
   fill: none;
   stroke: var(--accent);
   stroke-width: 2.2;
   stroke-linecap: round;
 }
 
-.tools { display: flex; gap: 6px; }
+.mark path { stroke-dasharray: 14 7; animation: flow 2.4s linear infinite; }
+.mark path + path { animation-direction: reverse; animation-duration: 3.1s; }
+@keyframes flow { from { stroke-dashoffset: 0; } to { stroke-dashoffset: -21; } }
+@media (prefers-reduced-motion: reduce) { .mark path { animation: none; } }
 
-.ghost {
-  width: 40px;
-  height: 40px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 50%;
-  background: var(--card);
-  color: var(--ink);
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(27, 27, 47, .06);
+.head-logo {
+  justify-content: flex-start;
+  padding: 0 14px;
+  font-family: var(--serif);
+  font-size: 1.35rem;
+  line-height: 1;
+  letter-spacing: -.01em;
+  text-transform: none;
+  white-space: nowrap;
 }
 
+.head-logo i { font-style: italic; margin-left: .22em; }
+
+/* La case rouge : le lieu choisi et sa température, toujours sous les yeux. */
+.head-temp {
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 14px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  line-height: 1.15;
+}
+
+.head-temp span { font-size: 9.5px; opacity: .85; }
+.head-temp b { font: 400 1.3rem/1 var(--serif); letter-spacing: 0; text-transform: none; }
+
+/* Chaque lettre peut s'allumer sous le curseur (fx.js) et se rendre en douceur. */
+.l { transition: color 1.1s ease; }
+.sp { display: inline-block; width: .28em; }
+.l.hot { color: var(--c); transition: none; }
+
+.ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 0 14px;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.ghost:hover { background: var(--accent-soft); }
+.ghost:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
 .ghost svg {
-  width: 18px;
-  height: 18px;
+  width: 15px;
+  height: 15px;
   fill: none;
   stroke: currentColor;
   stroke-width: 1.8;
@@ -183,6 +226,110 @@ body {
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .ghost.busy svg { animation: none; } }
 
+/* Téléphone : la rangée de liens disparaît, les deux commandes restent, en
+   icônes, à droite de la case du logo. */
+@media (max-width: 719px) {
+  .head-nav {
+    position: absolute;
+    top: env(safe-area-inset-top);
+    right: 0;
+    display: flex;
+    height: 56px;
+  }
+  .head-nav a, .head-space { display: none; }
+  .head-nav .ghost { width: 50px; padding: 0; }
+  .head-nav .ghost span { display: none; }
+}
+
+@media (min-width: 720px) {
+  .head-nav {
+    display: flex;
+    align-items: stretch;
+    height: 38px;
+    border-bottom: 1px solid var(--rule);
+  }
+  .head-nav > a {
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    border-right: 1px solid var(--rule);
+  }
+  .head-nav > a:hover { background: var(--accent-soft); }
+  .head-space { flex: 1; }
+  .head-main { grid-template-columns: 74px 1fr 1.4fr 1fr 150px; min-height: 74px; }
+  .head-tag {
+    display: flex;
+    font-family: var(--serif);
+    font-size: 1.05rem;
+    letter-spacing: 0;
+    text-transform: none;
+    text-align: center;
+    padding: 0 16px;
+  }
+  .head-temp { display: flex; }
+  .head-logo { justify-content: center; font-size: 2.3rem; }
+  .head-temp b { font-size: 1.7rem; }
+}
+
+/* ------------------------------------------------------------ écran d'accueil */
+
+.screen {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100svh;
+  padding-top: calc(env(safe-area-inset-top) + var(--head-h));
+  padding-bottom: calc(var(--dock-h) + 12px);
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  /* Les halos dépassent volontairement ; sur téléphone, un pixel de trop
+     élargirait la fenêtre de mise en page entière. */
+  overflow-x: clip;
+}
+
+/* Un voile sombre au bas de la fenêtre : le chiffre et le bouton se lisent sur
+   n'importe quelle tuile. Fixe et pleine largeur, donc sans bord visible. */
+body.has-wall::after {
+  content: '';
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 58vh;
+  background: linear-gradient(to top, rgba(12, 12, 13, .94) 10%, rgba(12, 12, 13, .6) 52%, transparent);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Les coordonnées du plan, en mono, dans les coins de la zone libre. */
+.coords {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + var(--head-h) + 14px);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  margin: 0;
+  font: 400 11px/1 var(--mono);
+  letter-spacing: .12em;
+  color: var(--ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.hero { position: relative; align-self: flex-start; max-width: 100%; }
+
+/* Un halo sombre derrière le chiffre : il se lit même sur une tuile claire. */
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: -30px -16px -10px -40px;
+  background: radial-gradient(closest-side, rgba(12, 12, 13, .9), rgba(12, 12, 13, .6) 60%, transparent);
+  pointer-events: none;
+  z-index: -1;
+}
+.hero > * { pointer-events: none; }
+.hero .pick, .hero .pick *, .hero label { pointer-events: auto; }
+
 /* ------------------------------------------------------------ où je me baigne */
 
 .whereat {
@@ -190,45 +337,51 @@ body {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-  margin: 24px 0 0;
-  font-size: 15px;
+  margin: 0;
+  font: 400 11.5px/1.4 var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
   color: var(--ink-soft);
 }
 
 .whereat label { flex: none; }
 
-.whereat-far {
-  flex: none;
-  font-size: 12.5px;
-  color: var(--ink-soft);
-  opacity: .8;
-}
+.whereat-far { flex: none; font-size: 11px; color: var(--ink-soft); }
 
-/* Pastille violette autour du <select> : le menu reste natif — la roue d'iOS —
-   et seule son enveloppe est dessinée. */
+/* Le menu reste natif — la roue d'iOS — et seule son enveloppe est dessinée :
+   une case à filet, comme celles de l'en-tête. */
 .pick {
   position: relative;
   display: inline-flex;
   align-items: center;
-  border-radius: 999px;
-  background: var(--accent-soft);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: rgba(12, 12, 13, .6);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
 }
+
+.pick:hover { border-color: var(--accent); }
 
 .pick select {
   /* 16 px au moins : en dessous, iOS zoome sur le champ à l'ouverture. */
   appearance: none;
   -webkit-appearance: none;
-  padding: 8px 30px 8px 15px;
+  padding: 8px 32px 8px 14px;
   border: 0;
   border-radius: inherit;
   background: transparent;
-  color: var(--accent-ink-on-soft);
+  color: var(--ink);
   font: inherit;
+  font-family: var(--sans);
   font-size: 16px;
   font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
   cursor: pointer;
 }
 
+.pick select option { color: #111; }
 .pick select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .pick svg {
@@ -237,20 +390,20 @@ body {
   width: 12px;
   height: 13px;
   fill: none;
-  stroke: var(--accent-ink-on-soft);
+  stroke: var(--ink);
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
   pointer-events: none;
 }
 
-/* Ce que l'app dit du jour : entre le chiffre et les repères, en retrait. */
+/* Ce que l'app dit du jour. */
 .greeting {
-  max-width: 30ch;
-  margin: 0 0 20px;
-  font-size: 14.5px;
-  line-height: 1.5;
-  color: var(--ink-soft);
+  max-width: 34ch;
+  margin: 0 0 18px;
+  font: italic 400 1.15rem/1.35 var(--serif);
+  color: var(--ink);
+  text-shadow: 0 1px 14px rgba(0, 0, 0, .8);
 }
 
 /* ---------------------------------------------------------- température */
@@ -260,56 +413,125 @@ body {
   align-items: baseline;
   gap: 12px;
   flex-wrap: wrap;
-  margin: 6px 0 18px;
+  margin: 8px 0 10px;
 }
 
 .readout-value {
   margin: 0;
   display: flex;
   align-items: flex-start;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
-  font-size: clamp(3.2rem, 16vw, 4.4rem);
-  font-weight: 700;
-  line-height: .9;
-  letter-spacing: -.04em;
+  font-family: var(--serif);
+  font-size: clamp(5rem, 27vw, 9rem);
+  font-weight: 400;
+  line-height: .86;
+  letter-spacing: -.045em;
   font-variant-numeric: tabular-nums;
+  text-shadow: 0 2px 30px rgba(0, 0, 0, .65);
 }
 
-.readout-value .degree { font-size: .42em; line-height: 1.1; }
+.readout-value .degree { font-size: .4em; line-height: 1.05; font-style: italic; }
 
 .readout-source {
   margin: 0 0 6px;
-  font-size: 12px;
-  letter-spacing: .04em;
+  font: 400 11px/1 var(--mono);
+  letter-spacing: .08em;
   text-transform: uppercase;
   color: var(--ink-soft);
 }
 
 .stale .readout-value { opacity: .45; }
 
-/* Trois repères en filet, sur le modèle des équipements de la maquette. */
-.facts {
+/* Invite à toucher le mur, et son point qui pulse. */
+.drag-hint {
   display: flex;
-  gap: 26px;
-  margin: 0 0 20px;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 14px;
+  font: 400 10.5px/1 var(--mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.drag-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: ping 1.8s ease-out infinite;
+}
+
+@keyframes ping {
+  0% { box-shadow: 0 0 0 0 rgba(242, 40, 60, .6); }
+  100% { box-shadow: 0 0 0 10px rgba(242, 40, 60, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) { .drag-dot { animation: none; } }
+
+/* Bandeau défilant des dix lieux. */
+.ticker {
+  align-self: center;
+  width: min(100%, 460px);
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  background: rgba(12, 12, 13, .72);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  font: 400 11px/1 var(--mono);
+  letter-spacing: .08em;
+  white-space: nowrap;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent);
+}
+
+.ticker-track { display: flex; width: max-content; animation: tick 46s linear infinite; }
+.ticker-track > div { display: flex; flex: none; padding: 13px 0; }
+.ticker-track span { color: var(--ink-soft); }
+.ticker-track b { color: var(--ink); font-weight: 600; margin-left: .5em; }
+.ticker-track i { font-style: normal; margin: 0 1.6em; color: var(--accent); }
+@keyframes tick { to { transform: translateX(-50%); } }
+@media (prefers-reduced-motion: reduce) { .ticker-track { animation: none; } }
+
+/* ----------------------------------------------------- repères & durée */
+
+.now {
+  display: grid;
+  margin-top: 0;
+  border: 1px solid var(--rule);
+  background: var(--card);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.now > * { margin: 0; }
+
+/* Trois repères, en cases. */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
   padding: 0;
   list-style: none;
+  border-bottom: 1px solid var(--rule);
 }
 
 .facts li {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  letter-spacing: .04em;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px;
+  font: 400 10.5px/1.3 var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
   color: var(--ink-soft);
-  text-align: center;
 }
 
+.facts li + li { border-left: 1px solid var(--rule); }
+
 .facts svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: var(--accent);
   stroke-width: 1.7;
@@ -317,26 +539,34 @@ body {
   stroke-linejoin: round;
 }
 
-.facts b { display: block; color: var(--ink); font-size: 12.5px; font-weight: 600; }
+.facts b {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink);
+  font: 400 1.35rem/1.1 var(--serif);
+  letter-spacing: 0;
+  text-transform: none;
+}
 
-/* La régularité, en une ligne — jamais un chiffre isolé mis en avant comme un
-   score, jamais de badge. Le pastille d'accent est la seule insistance. */
 .streak {
   display: flex;
   align-items: baseline;
-  gap: 7px;
-  margin: -6px 0 20px;
-  font-size: 13.5px;
+  gap: 8px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--rule);
+  font: 400 12px/1.4 var(--mono);
+  letter-spacing: .04em;
   color: var(--ink-soft);
 }
 
 .streak::before {
   content: '';
+  flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: var(--accent);
-  flex: none;
+  transform: translateY(-1px);
 }
 
 .streak[hidden] { display: none; }
@@ -347,30 +577,38 @@ body {
   display: block;
   margin-bottom: 12px;
   padding: 18px;
-  border-radius: var(--radius);
+  border: 1px solid var(--rule);
+  border-radius: 0;
   background: var(--card);
-  box-shadow: 0 1px 3px rgba(27, 27, 47, .05);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+/* Dans le bloc des repères, la carte de durée est une case de plus. */
+.now .card {
+  margin: 0;
+  padding: 22px 18px;
+  border: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .card-title {
   margin: 0 0 14px;
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: .13em;
+  font: 400 10.5px/1 var(--mono);
+  letter-spacing: .12em;
   text-transform: uppercase;
   color: var(--ink-soft);
 }
 
-/* Précision sous le réglage : la règle appliquée, ou son plafond. */
 .card-note {
   margin: 14px 0 0;
-  font-size: 12.5px;
-  line-height: 1.5;
+  font: 400 11.5px/1.5 var(--mono);
+  letter-spacing: .03em;
   text-align: center;
   color: var(--ink-soft);
 }
-
-.screen .card { margin: 28px 0 0; }
 
 /* Réglage de la durée : moins, valeur, plus, centrés sur une même ligne. */
 .bath-stepper {
@@ -381,36 +619,40 @@ body {
 }
 
 .round {
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   flex: none;
-  border: 0;
-  border-radius: 50%;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font: 400 21px/1 -apple-system, BlinkMacSystemFont, sans-serif;
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--ink);
+  font: 400 22px/1 var(--sans);
   cursor: pointer;
+  transition: background 160ms, border-color 160ms, transform 160ms;
 }
+
+.round:hover { border-color: var(--accent); background: var(--accent-dim); }
+.round:active { transform: scale(.94); }
+.round:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .bath-duration {
   margin: 0;
-  min-width: 112px;
+  min-width: 140px;
   display: flex;
   align-items: baseline;
   justify-content: center;
-  gap: 6px;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
-  font-size: 2.5rem;
-  font-weight: 700;
+  gap: 8px;
+  font-family: var(--serif);
+  font-size: 3.6rem;
+  font-weight: 400;
   line-height: 1;
   letter-spacing: -.03em;
   font-variant-numeric: tabular-nums;
 }
 
 .bath-unit {
-  font-size: .3em;
-  font-weight: 600;
-  letter-spacing: .1em;
+  font: 400 11px/1 var(--mono);
+  letter-spacing: .12em;
   text-transform: uppercase;
   color: var(--ink-soft);
 }
@@ -428,59 +670,105 @@ body {
   right: 0;
   bottom: 0;
   z-index: 5;
-  padding: 16px var(--gutter) calc(env(safe-area-inset-bottom) + 16px);
-  background: linear-gradient(to top, var(--paper) 60%, transparent);
+  padding: 18px var(--gutter) calc(env(safe-area-inset-bottom) + 16px);
+  background: linear-gradient(to top, var(--paper) 55%, transparent);
   pointer-events: none;
 }
 
 .cta-dock .cta { pointer-events: auto; }
 
 .cta {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   width: 100%;
-  max-width: 620px;
+  max-width: 560px;
   margin: 0 auto;
   padding: 17px 20px;
-  border: 0;
+  border: 1px solid rgba(255, 255, 255, .18);
   border-radius: var(--radius);
   background: var(--accent);
   color: var(--accent-ink);
-  font: inherit;
-  font-size: 16px;
-  font-weight: 600;
+  font: 400 1.35rem/1.1 var(--serif);
+  letter-spacing: 0;
   cursor: pointer;
-  box-shadow: 0 6px 18px rgba(123, 92, 245, .28);
+  box-shadow: 0 10px 34px rgba(242, 40, 60, .32);
+  transition: transform 180ms cubic-bezier(.22, .61, .36, 1), box-shadow 180ms;
 }
 
-/* Sans cette règle, le focus programmatique (l'onboarding porte le focus sur
-   son premier bouton à l'ouverture) retombe sur l'anneau noir par défaut du
-   navigateur, anguleux sur une pilule. */
-.cta:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+/* Un reflet qui traverse le bouton au survol. */
+.cta::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, .28) 50%, transparent 70%);
+  transform: translateX(-120%);
+  pointer-events: none;
+}
+
+.cta:hover::after { transform: translateX(120%); transition: transform 700ms ease; }
+.cta:hover { transform: translateY(-2px); box-shadow: 0 14px 40px rgba(242, 40, 60, .42); }
+.cta:active { transform: translateY(0) scale(.99); }
+
+.cta:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 
 .cta-icon { width: 14px; height: 14px; fill: currentColor; }
 
+@media (prefers-reduced-motion: reduce) {
+  .cta, .cta::after { transition: none; }
+}
+
 /* ---------------------------------------------------------------- blocs */
 
-.block { margin-top: 30px; }
+.block { margin-top: 28px; }
+
+/* Chaque bloc est une case : un fond sombre et flouté, pour que les tuiles du
+   mur ne passent pas derrière le texte quand on descend. */
+.block:not(.now) {
+  padding: 20px;
+  border: 1px solid var(--rule);
+  background: rgba(12, 12, 13, .84);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.block:not(.now) > .card {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+
+/* Les blocs entrent au défilement ; sans JavaScript ils restent visibles. */
+.can-reveal .reveal {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 700ms ease, transform 700ms cubic-bezier(.22, .61, .36, 1);
+}
+.can-reveal .reveal.in { opacity: 1; transform: none; }
 
 .micro {
-  margin: 0 0 16px;
+  margin: 0 0 14px;
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 12px;
-  font-size: 15px;
-  font-weight: 600;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  font: 400 1.5rem/1.1 var(--serif);
   letter-spacing: -.01em;
 }
 
+.micro .micro-note { font-family: var(--mono); }
+
 .micro-note {
-  font-size: 11.5px;
-  font-weight: 400;
-  letter-spacing: .03em;
+  font: 400 11px/1.5 var(--mono);
+  letter-spacing: .04em;
   color: var(--ink-soft);
 }
 
@@ -1234,49 +1522,109 @@ body.timing { overflow: hidden; }
 
 .readout-value { -webkit-user-select: none; user-select: none; }
 
-/* --------------------------------------------------------- bureau (≥ 720px) */
 
-/* En dessous, la fenêtre EST l'écran de l'app. Au-delà, elle déborde large-
-   ment d'un contenu pensé pour un téléphone : sans traitement, la colonne
-   flotte collée en haut d'un vide. On présente plutôt l'app comme un
-   panneau posé sur le même violet pâle que la vague d'accueil, plus large
-   pour que le chiffre, la carte du lac et la courbe (déjà fluides, en
-   `width: 100%`) profitent vraiment de la place. Le minuteur et
-   l'introduction (`.timer`, `.onboarding`) n'ont pas ce problème : déjà des
-   recouvrements plein écran qui centrent une colonne à 420px, ils restent
-   inchangés. */
-@media (min-width: 720px) {
-  body { background: var(--accent-soft); }
+/* -------------------------------------------------- refonte : reprises */
 
-  .app {
-    max-width: 680px;
-    margin: 48px auto;
-    background: var(--card);
-    border-radius: calc(var(--radius) + 6px);
-    box-shadow: 0 30px 70px rgba(27, 27, 47, .18);
-    overflow: hidden;
+/* Ce qui suit adapte les blocs d'origine au thème sombre et aux cases à
+   filet : mêmes sélecteurs qu'au-dessus, mêmes variables, forme différente. */
+
+.prose h1, .prose h2 { font-family: var(--serif); font-weight: 400; letter-spacing: -.015em; }
+.prose h1 { font-size: 2.3rem; line-height: 1.1; }
+.prose h2 { font-size: 1.55rem; padding-top: 22px; border-top: 1px solid var(--rule); }
+.prose p { font-size: 15px; }
+.prose a, .foot a, .micro-note a { color: var(--link); }
+.prose a:hover, .foot a:hover { color: var(--ink); }
+
+/* Le texte rédigé repose sur un fond sombre : sans lui, les tuiles claires du
+   mur passeraient derrière les paragraphes. */
+.prose, .gear, .support, .foot {
+  padding: 22px 20px;
+  border: 1px solid var(--rule);
+  background: rgba(12, 12, 13, .86);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+
+.prose { max-width: none; }
+.prose > * { max-width: 44rem; }
+.prose .temps, .prose .duree-list { max-width: none; }
+
+.temps, .duree-list li, .gear-list, .commission, .coffee, .diag pre {
+  border-radius: 0;
+}
+
+.temps { border: 1px solid var(--rule); background: transparent; }
+.temps b { font-family: var(--serif); font-weight: 400; font-size: 1.15rem; }
+.duree-list li { border: 1px solid var(--rule); background: transparent; }
+.duree-list b { font-family: var(--serif); font-weight: 400; font-size: 1.5rem; color: var(--ink); }
+.gear-list { background: transparent; }
+.coffee { background: transparent; border-color: var(--rule); color: var(--ink); }
+.coffee:hover, .commission:hover { border-color: var(--accent); }
+.commission { background: transparent; }
+.commission b { color: var(--link); }
+.faq dt { font-family: var(--serif); font-weight: 400; font-size: 1.15rem; color: var(--ink); }
+
+.chart .line { stroke: var(--accent); }
+.map .shore { fill: rgba(244, 241, 234, .06); }
+
+/* Recouvrements : le mur coule derrière, flouté, au lieu d'un aplat. */
+.onboarding, .timer {
+  background: rgba(10, 10, 12, .86);
+  background-image: radial-gradient(120% 60% at 80% -20%, var(--accent-dim) 0%, transparent 70%);
+  -webkit-backdrop-filter: blur(18px);
+  backdrop-filter: blur(18px);
+}
+
+.timer[data-state="running"],
+.timer[data-state="after"] {
+  --ink: #f4f1ea;
+  --ink-soft: rgba(244, 241, 234, .64);
+  --rule: rgba(244, 241, 234, .18);
+  --card: rgba(255, 255, 255, .06);
+  --accent: #ff4a5c;
+  --accent-ink: #1a0508;
+  --accent-dim: rgba(255, 74, 92, .24);
+  background: rgba(8, 8, 10, .8);
+  background-image:
+    radial-gradient(120% 80% at 50% -10%, rgba(242, 40, 60, .22) 0%, transparent 72%),
+    radial-gradient(90% 70% at 10% 110%, rgba(53, 182, 255, .14) 0%, transparent 70%);
+}
+
+.timer-clock, .brief-duration, .after-word { font-family: var(--serif); font-weight: 400; }
+.brief-list, .timer-warn, .after-facts { border-radius: 0; border: 1px solid var(--rule); }
+.hold-btn { box-shadow: 0 6px 24px rgba(242, 40, 60, .22); border: 1px solid var(--rule); }
+.timer-phase { font-family: var(--mono); letter-spacing: .14em; }
+
+.toast { border-radius: 0; font-family: var(--mono); font-size: 12px; letter-spacing: .04em; }
+
+.foot { margin-top: 28px; }
+
+/* Grand écran : repères à gauche, durée à droite. */
+@media (min-width: 900px) {
+  :root { --gutter: 32px; }
+
+  .now {
+    grid-template-columns: 1.35fr 1fr;
+    grid-template-areas: 'facts card' 'streak card';
+    align-items: stretch;
   }
+  .now .facts { grid-area: facts; border-bottom: 0; border-right: 1px solid var(--rule); }
+  .now .streak { grid-area: streak; border-bottom: 0; border-top: 1px solid var(--rule); border-right: 1px solid var(--rule); }
+  .now .card { grid-area: card; display: flex; flex-direction: column; justify-content: center; }
+  .readout-value { font-size: 12rem; }
+  .hero { padding-bottom: 6px; }
+  .greeting { font-size: 1.4rem; }
+  .screen { padding-bottom: calc(var(--dock-h) + 24px); }
+}
 
-  .screen {
-    padding-top: 32px;
-  }
+/* Téléphone étroit : les trois repères passent en pile compacte. */
+@media (max-width: 420px) {
+  .facts li { padding: 12px 10px; }
+  .facts b { font-size: 1.15rem; }
+}
 
-  /* Le chiffre reste plafonné à 4.4rem par le clamp() mobile (pensé pour la
-     largeur d'un téléphone, pas d'une fenêtre) : sur un panneau à 680px, il
-     resterait de la même taille que sur un petit écran, alors que tout
-     l'espace autour de lui a grandi. */
-  .readout-value { font-size: 5.4rem; }
-
-  /* Le bandeau reste fixe — le geste de lancement doit rester joignable
-     depuis la carte du lac et la courbe plus bas, pas seulement depuis
-     l'écran de préparation — mais recentré sur la largeur du panneau
-     plutôt que sur celle, bien plus large, de la fenêtre. */
-  .cta-dock {
-    left: 50%;
-    right: auto;
-    width: 100%;
-    max-width: 680px;
-    transform: translateX(-50%);
-    background: linear-gradient(to top, var(--card) 60%, transparent);
-  }
+/* Écran bas (téléphone en paysage) : le chiffre cède de la place au mur. */
+@media (max-height: 520px) {
+  .readout-value { font-size: 4rem; }
+  .greeting, .drag-hint { display: none; }
 }

@@ -28,12 +28,10 @@
       content="La température de l'eau du Léman en temps réel et la durée idéale de votre bain froid : 1 minute par degré. Respirez, puis entrez.">
 <link rel="canonical" href="https://bainfroidtemps.ch/">
 
-<!-- Deux couleurs plutôt qu'une : la barre d'état d'iOS suit le haut de la page,
-     lilas en clair et sombre en sombre. Une teinte unique jurerait dans l'un des
-     deux thèmes. -->
-<meta name="theme-color" content="#ece7fe" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#13131d" media="(prefers-color-scheme: dark)">
-<meta name="color-scheme" content="light dark">
+<!-- Un seul thème, sombre : le mur du lac en est le fond, et il n'a pas de
+     version claire. La barre d'état d'iOS suit le noir de la page. -->
+<meta name="theme-color" content="#0c0c0d">
+<meta name="color-scheme" content="dark">
 
 <!-- Open Graph : WhatsApp, Facebook, LinkedIn -->
 <meta property="og:type" content="website">
@@ -59,7 +57,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Léman">
 
 <!-- Icône de l'écran d'accueil iOS -->
@@ -165,49 +163,78 @@
 </head>
 <body data-band="unknown">
 
-<div class="wash" aria-hidden="true"></div>
+<!-- Le mur du lac : le fond de tout le site. Un plan en perspective couvert de
+     tuiles, dessiné par `wall.js`. Décoratif — la température se lit sans lui,
+     et sans WebGL il disparaît et laisse le fond uni. -->
+<canvas id="wall" aria-hidden="true"></canvas>
 
-<div class="app">
-
-  <!-- Écran de préparation : température, durée, sélecteur du lieu. L'action
-       vit dans son propre bandeau fixe, ci-dessous : toujours visible. -->
-  <section class="screen">
-
-    <header class="top">
+<!-- En-tête en cases bordées. Fixe : le logo, le lieu et la température du
+     moment restent sous les yeux quand on parcourt le reste de la page. -->
+<header class="head">
+  <nav class="head-nav" aria-label="Navigation">
+    <a href="#top">Accueil</a>
+    <a href="#aujourdhui">Lieux</a>
+    <a href="#duree">Durée</a>
+    <a href="#faq">Questions</a>
+    <span class="head-space"></span>
+    <button id="locate" class="ghost" type="button" aria-label="Le lieu le plus proche de moi">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 3 10.5l7.5 3 3 7.5L21 3Z"/></svg>
+      <span>Me localiser</span>
+    </button>
+    <button id="refresh" class="ghost" type="button" aria-label="Actualiser">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
+      <span>Actualiser</span>
+    </button>
+  </nav>
+  <div class="head-main">
+    <a class="head-mark" href="#top" aria-label="Bains Froids Léman — accueil">
       <svg class="mark" viewBox="0 0 44 30" role="img" aria-label="Lac Léman">
         <path d="M2 9c5-5 9-5 14 0s9 5 14 0 9-5 12-2"/>
         <path d="M2 19c5-5 9-5 14 0s9 5 14 0 9-5 12-2"/>
       </svg>
-      <div class="tools">
-        <button id="locate" class="ghost" type="button" aria-label="Le lieu le plus proche de moi">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 3 10.5l7.5 3 3 7.5L21 3Z"/></svg>
-        </button>
-        <button id="refresh" class="ghost" type="button" aria-label="Actualiser">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
-        </button>
+    </a>
+    <p class="head-tag head-tag-l" data-letters>Température + Durée + Souffle</p>
+    <a class="head-logo" href="#top" data-letters>Bains Froids <i>Léman</i></a>
+    <p class="head-tag head-tag-r" data-letters>L’eau du lac, en direct</p>
+    <a class="head-temp" href="#top" aria-label="Lieu et température choisis">
+      <span id="headSpot">Genève</span>
+      <b id="headVal">--°</b>
+    </a>
+  </div>
+</header>
+
+<div class="app">
+  <!-- Écran de préparation : température, durée, sélecteur du lieu. L'action
+       vit dans son propre bandeau fixe, ci-dessous : toujours visible. -->
+  <section class="screen" id="top">
+    <p class="coords" aria-hidden="true"><span id="coordA">46.2225 N</span><span id="coordB">6.1589 E</span></p>
+    <div class="hero">
+      <!-- Choix du lieu : un vrai <select>, donc la roue native d'iOS — plus sûre
+           au pouce qu'une liste maison, et lisible par VoiceOver sans effort.
+           Le mur offre le même choix, au toucher. -->
+      <p class="whereat">
+        <label for="spot">Je m’immerge à</label>
+        <span class="pick">
+          <select id="spot" aria-label="Lieu de baignade"></select>
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4"/></svg>
+        </span>
+        <span class="whereat-far" id="spotDistance"></span>
+      </p>
+      <div class="readout" aria-live="polite">
+        <p class="readout-value"><span id="value">--</span><span class="degree">°</span></p>
+        <p class="readout-source" id="readoutSource"></p>
       </div>
-    </header>
-
-    <!-- Choix du lieu : un vrai <select>, donc la roue native d'iOS — plus sûre
-         au pouce qu'une liste maison, et lisible par VoiceOver sans effort. -->
-    <p class="whereat">
-      <label for="spot">Je m’immerge à</label>
-      <span class="pick">
-        <select id="spot" aria-label="Lieu de baignade"></select>
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4"/></svg>
-      </span>
-      <span class="whereat-far" id="spotDistance"></span>
-    </p>
-
-    <div class="readout" aria-live="polite">
-      <p class="readout-value"><span id="value">--</span><span class="degree">°</span></p>
-      <p class="readout-source" id="readoutSource"></p>
+      <!-- Ce que l'app dit du jour. Change avec la température et avec la date :
+           sans cela, la même phrase deux semaines de suite ne veut plus rien dire. -->
+      <p class="greeting" id="greeting"></p>
     </div>
-
-    <!-- Ce que l'app dit du jour. Change avec la température et avec la date :
-         sans cela, la même phrase deux semaines de suite ne veut plus rien dire. -->
-    <p class="greeting" id="greeting"></p>
-
+    <p class="drag-hint" aria-hidden="true"><span class="drag-dot"></span>Glissez le mur, touchez un lieu</p>
+    <!-- Bandeau défilant : les dix lieux d'un coup d'œil. Redondant avec la
+         liste rédigée plus bas, donc masqué aux lecteurs d'écran. -->
+    <div class="ticker" aria-hidden="true"><div class="ticker-track" id="tickerTrack"></div></div>
+  </section>
+  <!-- Repères, séries et durée : sous le mur, dans des cases bordées. -->
+  <section class="block now reveal">
     <ul class="facts">
       <li>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.5 9.5 12l3.5 3.5L20 8"/><path d="M15 8h5v5"/></svg>
@@ -222,12 +249,10 @@
         <span><b id="factSource">—</b>source</span>
       </li>
     </ul>
-
     <!-- Invisible tant qu'aucun bain n'est consigné : rien à raconter à qui
          découvre l'app. La régularité, jamais la durée ni le froid — voir
          `statsPhrase` dans sources.js. -->
     <p class="streak" id="homeStreak" hidden></p>
-
     <div class="card">
       <p class="card-title">Mon temps de présence</p>
       <div class="bath-stepper">
@@ -238,7 +263,6 @@
       <p class="card-note" id="bathNote">Durée conseillée d'après la température.</p>
     </div>
   </section>
-
   <!-- Bandeau d'action fixe : le geste de lancement ne doit pas dépendre du
        défilement, ni pour le retrouver plus bas, ni pour l'éviter par mégarde
        en scrollant vers la carte ou la courbe.
@@ -252,14 +276,14 @@
   </div>
 
   <!-- La carte : comparer les lieux vient après le geste. -->
-  <section class="block">
+  <section class="block reveal">
     <h2 class="micro">Le lac <span class="micro-note">touchez un point pour changer de lieu</span></h2>
     <div class="card">
       <div class="map" id="map"></div>
     </div>
   </section>
 
-  <section class="block">
+  <section class="block reveal">
     <h2 class="micro">Sept jours <span id="chartHint" class="micro-note">modèle Eawag</span></h2>
     <div class="card">
       <div class="chart" id="chart"></div>
@@ -274,7 +298,7 @@
        libellés de boutons. Les valeurs entre les marqueurs `prerender` sont
        écrites par la CI (tools/prerender-seo.mjs) : sans elles, un robot ne voit
        que des tirets, puisque tout le reste arrive par JavaScript. -->
-  <section class="block prose">
+  <section class="block prose reveal">
     <h1>Température de l'eau du lac Léman</h1>
 
     <p>
@@ -423,7 +447,7 @@
        tête, afterdrop, mesure, sécurité), pas une liste générique de produits.
        Liens affiliés Amazon Associates — la mention requise par Amazon figure
        en pied de liste, pas reléguée en bas de page. -->
-  <section class="block gear">
+  <section class="block gear reveal">
     <h2 class="micro">Matériel</h2>
     <ul class="gear-list">
       <li>
@@ -475,7 +499,7 @@
   <!-- Soutien : en filet plutôt qu'en violet plein, pour ne pas entrer en
        concurrence avec le bouton de lancement, qui reste la seule action pleine
        de l'écran. -->
-  <section class="block support">
+  <section class="block support reveal">
     <a class="coffee" href="https://paypal.me/germainlot" target="_blank" rel="noopener">
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M4 9h12v5a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V9Z"/>
