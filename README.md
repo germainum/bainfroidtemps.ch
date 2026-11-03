@@ -53,9 +53,30 @@ comparables entre elles car toutes issues du modèle, et une **courbe sur sept
 jours** — cinq écoulés en trait plein, deux de prévision en pointillé.
 
 Dix lieux sont proposés, des Pâquis au Bouveret. On passe de l'un à l'autre par un
-**point de la carte**, par **balayage horizontal** sur le premier écran, ou par les
-flèches du clavier. Le balayage cède la place au défilement dès que le geste est
-vertical. Aux extrémités, il s'arrête plutôt que de boucler.
+**tuile du mur** (voir ci-dessous), par un **point de la carte**, par la liste
+déroulante, ou par les flèches du clavier, qui suivent l'ordre du lac.
+
+### Le mur du lac
+
+Le fond du site est un **mur 3D en WebGL2** (`wall.js`) : un plan en perspective,
+légèrement courbé sur les bords, couvert de tuiles — une par lieu, avec sa
+température sur une eau animée dont la teinte suit la bande de température. Il
+remplace l'ancien balayage horizontal.
+
+- **Glisser** déplace le mur, avec inertie ; la molette horizontale aussi. Au
+  repos, il dérive lentement.
+- **Survoler** une tuile l'éclaire ; la grille s'allume autour du curseur.
+- **Toucher** une tuile choisit le lieu, lance une onde et la ramène au centre.
+- **Défiler** la page incline et assombrit le mur ; il s'arrête de dessiner
+  quand il n'est plus visible.
+- Le bandeau défilant sous le chiffre et la case rouge de l'en-tête affichent
+  les mêmes valeurs ; le lieu choisi prend le chiffre affiché en grand.
+
+Tout tient dans un fragment shader qui remonte chaque pixel jusqu'au plan ; le
+même calcul existe en JavaScript pour savoir quelle tuile est sous le doigt. La
+définition baisse toute seule si l'appareil peine. Sans WebGL2, ou avec
+`prefers-reduced-motion`, le mur disparaît ou se fige : la température se lit
+sans lui. Aucune dépendance.
 
 Pour ajouter un lieu, complétez la constante `SPOTS` dans `sources.js` : le point
 doit se situer **sur l'eau**, sinon la simulation ne renvoie rien.
@@ -114,10 +135,10 @@ durée totale : entrée dans l'eau (respiration), régime stable (rester près d
 bord), puis préparation de la sortie. À l'échéance, il compte le dépassement
 plutôt que de s'arrêter en silence.
 
-**L'écran change de nature** dès le lancement : fond profond, texte clair. On ne
-lit plus une donnée, on traverse un moment — et un fond sombre se regarde mieux
-les yeux pleins d'eau. Les jetons de couleur sont redéfinis sur le conteneur du
-minuteur, ce qui teinte d'un coup tout ce qu'il contient.
+**L'écran change de nature** dès le lancement : le mur coule, flouté, derrière un
+voile sombre. On ne lit plus une donnée, on traverse un moment. Les jetons de
+couleur sont redéfinis sur le conteneur du minuteur, ce qui teinte d'un coup tout
+ce qu'il contient.
 
 Une **vibration** marque le départ, chaque minute entière, et l'échéance.
 Attention : **iOS n'expose pas `navigator.vibrate`** — sur iPhone, le code se
@@ -157,9 +178,9 @@ l'audio. L'écran le rappelle plutôt que de le taire.
 ## Soutien et contact
 
 Deux liens en bas de page, à des niveaux d'insistance distincts du bouton de
-lancement — qui garde seul le violet plein :
+lancement — qui garde seul le rouge plein :
 
-- **« Offre-moi un café »**, pastille lilas, vers
+- **« Offre-moi un café »**, case à filet, vers
   [paypal.me/germainlot](https://paypal.me/germainlot) ;
 - **« Contactez-moi sur WhatsApp »**, contour seul, pour une demande de création
   d'application. Le message est prérempli. Le libellé nomme WhatsApp : une
@@ -358,7 +379,9 @@ utile depuis l'iPhone lui-même, il liste les appels réussis ou échoués.
 | Fichier | Rôle |
 | --- | --- |
 | `index.html` | structure de la page et métadonnées iOS |
-| `app.css` | mise en forme, thèmes clair et sombre, encoches d'écran |
+| `app.css` | mise en forme (thème sombre unique), en-tête à cases, encoches d'écran |
+| `wall.js` | le mur du lac : scène WebGL2, tuiles, interactions |
+| `fx.js` | lettres qui s'allument au survol, apparition des blocs au défilement |
 | `sources.js` | URL, analyse des réponses, choix de la valeur — sans DOM ni réseau |
 | `app.js` | requêtes, cache local, rendu, cycle de vie |
 | `bath.js` | minuteur : consignes, maintien de confirmation, phases, session |

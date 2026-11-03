@@ -11,10 +11,12 @@
 import { initBath, setBathPlace, setWaterTemperature } from './bath.js';
 import { renderLakeMap } from './lakemap.js';
 import { initOnboarding } from './onboarding.js';
+import { initFx } from './fx.js';
+import { initWall } from './wall.js';
 import {
   CFG, SPOTS, asArray, bestReading, greeting, isStale, mood, nextIndex, parseMeasuredStations,
   nearestSpot, parseSeries, parseSnapshot, parseStationMeta, snapshotAge,
-  snapshotCurrentTemps, swipeDecision, toDate, trend, urlLatestTemperature, urlModelPoint,
+  snapshotCurrentTemps, toDate, trend, urlLatestTemperature, urlModelPoint,
   urlModelSnapshot, urlStationMeta,
 } from './sources.js';
 
@@ -25,6 +27,8 @@ let refreshing = false;
 let spotTemps = {};       // température par lieu, pour la carte
 let lastSeries = [];      // dernier rendu, pour repeindre sans refaire le réseau
 let lastHint = 'modèle Eawag';
+let wall = null;          // le mur 3D ; null sans WebGL2
+let heroValue = null;     // chiffre du lieu choisi, pour l'en-tête et le mur
 
 /* ------------------------------------------------------------------ affichage */
 
@@ -233,6 +237,8 @@ function renderPicker() {
 // le sélecteur suit, sinon il annoncerait un autre endroit que la température.
 function syncPicker() {
   $('spot').value = currentSpot.key;
+  $('headSpot').textContent = currentSpot.name;
+  wall?.setSelected(currentSpot.key);
   $('spotDistance').textContent = located?.key === currentSpot.key
     ? `à ${formatKm(located.km)} km de vous`
     : '';
@@ -265,6 +271,8 @@ function renderHero({ value, at, kind, label }) {
   // La couleur du fond suit la température : elle informe avant le chiffre.
   document.body.dataset.band = mood(value).band;
   showValue(value);
+  heroValue = value;
+  $('headVal').textContent = `${formatTemp(value)}°`;
 
   syncPicker();
   // Le détail de la source vit dans les trois repères ci-dessous ; cette ligne
@@ -367,8 +375,26 @@ function paint(stations, series, hint = 'modèle Eawag') {
   renderChart(series);
   renderHero(bestReading(currentSpot, stations, series));
   renderTempsList();
+  renderWall();
   $('chartHint').textContent = hint;
   drawMap();
+}
+
+// Le mur et le bandeau défilant montrent les dix lieux. Le lieu choisi prend le
+// chiffre affiché en grand — mesure officielle comprise — pour que sa tuile ne
+// contredise pas l'écran ; les autres viennent du modèle.
+function renderWall() {
+  const temps = { ...spotTemps };
+  if (heroValue != null && isFinite(heroValue)) temps[currentSpot.key] = heroValue;
+  wall?.setTemps(temps);
+
+  const track = $('tickerTrack');
+  const items = SPOTS.map((s) => {
+    const v = temps[s.key];
+    return `<span>${s.name.toUpperCase()} <b>${isFinite(v) ? `${formatTemp(v)}°` : '—'}</b></span>`;
+  }).join('<i>•</i>');
+  // Deux copies côte à côte : la boucle CSS ne montre jamais de trou.
+  track.innerHTML = `<div>${items}<i>•</i></div><div aria-hidden="true">${items}<i>•</i></div>`;
 }
 
 function drawMap() {
@@ -474,36 +500,14 @@ function moveSpot(direction) {
   if (to !== from) selectSpot(SPOTS[to], direction);
 }
 
-/* ------------------------------------------------------------ balayage */
+/* ------------------------------------------------------------ clavier */
 
-// Balayage horizontal sur le premier écran. Événements pointeur : ils couvrent
-// le doigt comme la souris, et le navigateur émet pointercancel dès qu'il prend
-// le geste pour un défilement — ce qui suffit à ne jamais lui disputer la page.
-function enableSwipe() {
-  const screen = document.querySelector('.screen');
-  let start = null;
-
-  screen.addEventListener('pointerdown', (e) => {
-    // Les commandes gardent la priorité sur le geste.
-    if (e.target.closest('button, a')) return;
-    if (!e.isPrimary) return;
-    start = { x: e.clientX, y: e.clientY, at: Date.now() };
-  });
-
-  const finish = (e) => {
-    if (!start) return;
-    const decision = swipeDecision(e.clientX - start.x, e.clientY - start.y, Date.now() - start.at);
-    start = null;
-    if (decision) moveSpot(decision);
-  };
-
-  screen.addEventListener('pointerup', finish);
-  screen.addEventListener('pointercancel', () => { start = null; });
-  screen.addEventListener('pointerleave', () => { start = null; });
-
-  // Au clavier, les flèches font le même travail.
+// Le geste de balayage a cédé la place au mur : glisser le fait défiler, toucher
+// une tuile choisit le lieu. Le clavier garde les flèches, qui passent d'un
+// lieu à l'autre dans l'ordre du lac.
+function enableKeys() {
   document.addEventListener('keydown', (e) => {
-    if (e.target.closest('input, textarea')) return;
+    if (e.target.closest('input, textarea, select')) return;
     if (e.key === 'ArrowRight') moveSpot('next');
     else if (e.key === 'ArrowLeft') moveSpot('prev');
   });
@@ -618,6 +622,30 @@ function init() {
   currentSpot = SPOTS.find((s) => s.key === cacheGet('spot')) || SPOTS[0];
   spotTemps = cacheGet('spotTemps') || {};
 
+  // Le mur d'abord : `syncPicker` et `paint` s'adressent à lui.
+  const canvas = $('wall');
+  try {
+    wall = initWall({
+      canvas,
+      spots: SPOTS,
+      bandOf: (t) => mood(t).band,
+      format: formatTemp,
+      onSelect: (spot) => selectSpot(spot),
+      onMove: (x, y) => {
+        // Des coordonnées qui défilent avec le geste, comme sur la maquette :
+        // le plan est celui du lac, centré sur Lausanne.
+        $('coordA').textContent = `${(46.5 + y * 0.012).toFixed(4)} N`;
+        $('coordB').textContent = `${(6.63 + x * 0.02).toFixed(4)} E`;
+      },
+    });
+  } catch (err) {
+    wall = null;
+    note('mur 3D', false, err.message);
+  }
+  document.body.classList.toggle('has-wall', !!wall);
+  note('mur 3D', !!wall, wall ? 'WebGL2' : 'WebGL2 indisponible — fond uni');
+  initFx();
+
   renderPicker();
   syncPicker();
 
@@ -635,7 +663,7 @@ function init() {
   window.addEventListener('online', () => refresh({ silent: true }));
   setInterval(() => { if (!document.hidden) refresh({ silent: true }); }, CFG.autoRefreshMs);
 
-  enableSwipe();
+  enableKeys();
   initBath();
   initOnboarding();
   locateIfAllowed();
