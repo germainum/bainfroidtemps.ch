@@ -1,67 +1,50 @@
-// Effets d'interface : lettres qui s'allument sous le curseur, et apparition
-// des blocs au défilement. Rien ici n'est nécessaire à la lecture — sans
-// JavaScript, le texte reste entier, et les blocs restent visibles.
+// Effets d'interface : menu plein écran, apparition des blocs au défilement, et
+// la variable `--p` qui fait tourner la forme et le titre d'accueil quand on
+// descend. Rien ici n'est nécessaire à la lecture — sans JavaScript, le texte
+// reste entier et les blocs restent visibles.
 
-const PALETTE = ['#f2283c', '#6f5bff', '#2fd27a', '#35b6ff', '#ffb02e', '#ff6fb5'];
 const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
 
-// Découpe le texte d'un élément en lettres, sans toucher à ses balises : le
-// <i> du logo garde son italique.
-function splitLetters(root) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  const letters = [];
-  for (const node of nodes) {
-    if (!node.nodeValue.trim()) continue;
-    const frag = document.createDocumentFragment();
-    for (const ch of node.nodeValue) {
-      if (ch === ' ') {
-        // Un vrai espace disparaît entre éléments flex : on garde une cale.
-        const sp = document.createElement('span');
-        sp.className = 'sp';
-        sp.textContent = '\u00a0';
-        frag.append(sp);
-        continue;
-      }
-      const span = document.createElement('span');
-      span.className = 'l';
-      span.textContent = ch;
-      frag.append(span);
-      letters.push(span);
-    }
-    node.replaceWith(frag);
-  }
-  return letters;
+function initMenu() {
+  const btn = document.getElementById('menuBtn');
+  const menu = document.getElementById('menu');
+  const label = document.getElementById('menuLabel');
+  if (!btn || !menu) return;
+
+  const set = (open) => {
+    menu.classList.toggle('open', open);
+    menu.setAttribute('aria-hidden', String(!open));
+    btn.setAttribute('aria-expanded', String(open));
+    label.textContent = open ? 'Fermer' : 'Menu';
+    document.body.classList.toggle('menu-open', open);
+    // `inert` : sans lui, la tabulation traverserait un menu invisible.
+    menu.inert = !open;
+  };
+  set(false);
+
+  btn.addEventListener('click', () => set(!menu.classList.contains('open')));
+  menu.addEventListener('click', (e) => { if (e.target.closest('a')) set(false); });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && menu.classList.contains('open')) { set(false); btn.focus(); }
+  });
 }
 
-// Les lettres proches du curseur prennent une couleur, puis la rendent en
-// douceur : la transition ne joue qu'au retour (voir `.l` dans app.css).
-function lightLetters(root) {
-  const letters = splitLetters(root);
-  if (!letters.length) return;
-  // Le texte lu par les lecteurs d'écran reste celui de l'élément entier.
-  if (!root.getAttribute('aria-label')) root.setAttribute('aria-label', root.textContent.trim());
-  letters.forEach((l) => l.setAttribute('aria-hidden', 'true'));
-
-  let rects = null;
-  const measure = () => { rects = letters.map((l) => l.getBoundingClientRect()); };
-  root.addEventListener('pointerenter', measure);
-  window.addEventListener('resize', () => { rects = null; });
-
-  root.addEventListener('pointermove', (e) => {
-    if (reduce.matches) return;
-    if (!rects) measure();
-    letters.forEach((l, i) => {
-      const r = rects[i];
-      const dx = e.clientX - (r.left + r.width / 2);
-      const dy = e.clientY - (r.top + r.height / 2);
-      if (dx * dx + dy * dy > 34 * 34 || l.classList.contains('hot')) return;
-      l.style.setProperty('--c', PALETTE[Math.floor(Math.random() * PALETTE.length)]);
-      l.classList.add('hot');
-      setTimeout(() => l.classList.remove('hot'), 140);
-    });
-  });
+// Progression du défilement sur le premier écran, de 0 à 1.
+function initScrollVar() {
+  const screen = document.querySelector('.screen');
+  if (!screen) return;
+  let queued = false;
+  const apply = () => {
+    queued = false;
+    const p = Math.min(1, Math.max(0, window.scrollY / Math.max(1, window.innerHeight)));
+    screen.style.setProperty('--p', p.toFixed(3));
+  };
+  window.addEventListener('scroll', () => {
+    if (queued) return;
+    queued = true;
+    requestAnimationFrame(apply);
+  }, { passive: true });
+  apply();
 }
 
 function reveal() {
@@ -79,6 +62,7 @@ function reveal() {
 }
 
 export function initFx() {
-  document.querySelectorAll('[data-letters]').forEach(lightLetters);
+  initMenu();
+  initScrollVar();
   reveal();
 }

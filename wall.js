@@ -1,85 +1,73 @@
-// Le mur du lac : un plan en perspective, courbé sur les bords, couvert de
-// tuiles — une par lieu, avec sa température sur une eau qui bouge. On le fait
-// glisser, il continue sur sa lancée ; le curseur allume la grille, un clic
-// sélectionne un lieu et le ramène au centre.
+// Le carrousel de bocaux : dix bocaux de verre, un par lieu, posés de biais sur
+// un fond crème. Chacun contient de l'eau dont le niveau monte avec la
+// température et dont la teinte suit la bande de froid ; l'étiquette porte le
+// nom du lieu et le chiffre. On les fait glisser, ils se rangent sur le plus
+// proche, et celui du centre devient le lieu choisi.
 //
-// WebGL2 brut, aucune dépendance : tout tient dans un seul fragment shader qui
-// remonte chaque pixel jusqu'au plan (lancer de rayon sur un sol incliné). Le
-// même calcul existe côté JavaScript (`screenToWorld`) pour savoir quelle
-// tuile se trouve sous le doigt — les deux doivent rester d'accord, c'est pour
-// cela que les constantes de la scène sont poussées au shader plutôt que
-// recopiées.
+// WebGL2 brut, sans dépendance. Chaque bocal est un quad en perspective dont le
+// fragment shader dessine tout : verre, eau, couvercle, étiquette. Le même calcul
+// de projection sert à savoir quel bocal est sous le doigt.
 //
-// Sans WebGL2, `initWall` renvoie null et la page garde son fond uni : le mur
-// est un décor, jamais une condition pour lire la température.
+// Sans WebGL2, `initWall` renvoie null : le fond reste crème et la température
+// se lit sans bocaux.
 
 /* ------------------------------------------------------------------ scène */
 
 const SCENE = {
-  pitch: 1.0,          // inclinaison de la caméra (rad), 0 = à l'horizontale
-  focal: 1.45,
-  height: 6.4,          // hauteur de la caméra au-dessus du plan
-  curve: 0.075,         // relèvement des bords de l'écran
-  pitch_scroll: 0.28,   // inclinaison ajoutée en quittant le premier écran
-  pitch_mouse: 0.035,
-  pitchMin: 0.5,
-  // Pas de la grille, en unités du monde. Une tuile occupe 2,5 × 1,5 dans une
-  // maille de 3,5 × 2,5 ; les rangées impaires sont décalées d'un demi-pas.
-  pitchX: 3.5,
-  pitchZ: 2.5,
-  tileX0: 0.5, tileX1: 3.0,
-  tileZ0: 0.5, tileZ1: 2.0,
-  shift: 1.5,
-  spots: 10,
-  rowStep: 4,           // d'une rangée à l'autre, on avance de 4 lieux
+  fov: 32 * Math.PI / 180,
+  H: 0.98,              // hauteur d'un bocal, en unités où la fenêtre fait 2 de haut
+  W: 0.7,               // largeur
+  spacing: 0.9,         // écart entre deux bocaux voisins (paysage)
+  spacingNarrow: 0.74,  // idem en portrait
+  count: 10,
 };
 
-// Couleurs de l'eau par bande de température : [profond, surface].
+// Eau par bande de température : [fond, surface]. Des teintes pleines, assez
+// chaudes pour s'accorder au crème et au bordeaux de la page.
 const WATER = {
-  cold:    [[0.04, 0.10, 0.30], [0.30, 0.52, 0.94]],
-  cool:    [[0.02, 0.16, 0.30], [0.22, 0.72, 0.92]],
-  fresh:   [[0.02, 0.20, 0.22], [0.20, 0.78, 0.64]],
-  good:    [[0.10, 0.20, 0.06], [0.66, 0.80, 0.26]],
-  warm:    [[0.30, 0.10, 0.04], [0.96, 0.58, 0.20]],
-  unknown: [[0.08, 0.09, 0.11], [0.26, 0.28, 0.33]],
+  cold:    [[0.16, 0.20, 0.50], [0.34, 0.46, 0.86]],
+  cool:    [[0.05, 0.36, 0.52], [0.24, 0.72, 0.84]],
+  fresh:   [[0.06, 0.42, 0.36], [0.32, 0.76, 0.58]],
+  good:    [[0.46, 0.50, 0.10], [0.84, 0.84, 0.28]],
+  warm:    [[0.78, 0.26, 0.10], [0.98, 0.62, 0.22]],
+  unknown: [[0.55, 0.50, 0.50], [0.82, 0.78, 0.76]],
 };
 
-const TILE_W = 640;
-const TILE_H = 384;
-const COLS = 5;
+const TILE_W = 768;       // étiquette : environ 2,7 de large pour 1 de haut
+const TILE_H = 280;
+const COLS = 2;
+const ROWS = 5;
 
 /* ---------------------------------------------------------------- shaders */
 
 const VERT = `#version 300 es
 in vec2 aPos;
-void main() { gl_Position = vec4(aPos, 0.0, 1.0); }`;
+uniform mat4 uMVP;
+uniform vec2 uSize;
+uniform float uGrow;
+out vec2 vUv;
+void main() {
+  vUv = aPos;
+  vec2 p = (aPos - 0.5) * uSize * uGrow;
+  gl_Position = uMVP * vec4(p, 0.0, 1.0);
+}`;
 
 const FRAG = `#version 300 es
 precision highp float;
-precision highp int;
 
-uniform vec2  uRes;
+in vec2 vUv;
+uniform vec2  uSize;
+uniform int   uMode;        // 0 bocal, 1 ombre
 uniform float uTime;
-uniform vec2  uPan;
-uniform float uPitch;
-uniform float uFocal;
-uniform float uHeight;
-uniform float uCurve;
-uniform vec2  uMouse;        // position du curseur dans le monde
-uniform float uMouseOn;      // 0..1 : le curseur est-il sur le mur ?
-uniform vec2  uHover;        // colonne et rangée de la tuile survolée
-uniform float uHoverOn;
-uniform float uSel;          // lieu sélectionné (0..9), -1 si aucun
-uniform vec4  uRip[4];       // x, z, début, actif
-uniform float uFade;         // 1 = plein éclat, 0 = éteint (défilement)
-uniform vec3  uDeep[10];
-uniform vec3  uSurf[10];
+uniform float uFill;        // niveau d'eau, 0..1
+uniform float uAlpha;
+uniform float uSeed;
+uniform float uHover;
+uniform vec3  uDeep;
+uniform vec3  uSurf;
+uniform vec2  uTile;        // colonne et rangée dans l'atlas
+uniform float uGrow;
 uniform sampler2D uAtlas;
-
-uniform vec2  uPitchXZ;      // pas de la grille
-uniform vec4  uTile;         // x0, x1, z0, z1
-uniform float uShift;
-uniform float uRowStep;
 
 out vec4 outColor;
 
@@ -96,136 +84,136 @@ float vnoise(vec2 p) {
              mix(hash(i + vec2(0, 1)), hash(i + vec2(1, 1)), f.x), f.y);
 }
 
-float fbm(vec2 p) {
-  float v = 0.0, a = 0.5;
-  for (int i = 0; i < 4; i++) { v += a * vnoise(p); p = p * 2.03 + 11.7; a *= 0.5; }
-  return v;
+float sdRR(vec2 p, vec2 b, float r) {
+  vec2 q = abs(p) - b + r;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
 }
 
-// Une ligne de grille d'épaisseur constante à l'écran, quelle que soit la
-// perspective : la dérivée de la coordonnée donne la taille d'un pixel.
-float gridLine(float c, float w) {
-  float d = abs(fract(c - 0.5) - 0.5);
-  return 1.0 - smoothstep(0.0, w, d / max(fwidth(c), 1e-5));
-}
+vec4 over(vec4 top, vec4 bot) { return top + bot * (1.0 - top.a); }
+vec4 premul(vec3 c, float a) { return vec4(c * a, a); }
 
 void main() {
-  vec2 ndc = (gl_FragCoord.xy / uRes) * 2.0 - 1.0;
-  float aspect = uRes.x / uRes.y;
-  vec2 p = vec2(ndc.x * aspect, ndc.y);
-  // Le relèvement des bords donne l'allure de bol de la maquette.
-  p.y -= uCurve * p.x * p.x;
+  if (uMode == 1) {
+    vec2 e = (vUv - 0.5) * 2.0;
+    float a = smoothstep(1.0, 0.0, length(e));
+    a *= a * 0.34 * uAlpha;
+    outColor = vec4(vec3(0.43, 0.10, 0.19) * a, a);
+    return;
+  }
 
-  float cp = cos(uPitch), sp = sin(uPitch);
-  vec3 d = vec3(p.x, p.y * cp - uFocal * sp, p.y * sp + uFocal * cp);
-  vec3 bg = vec3(0.047, 0.047, 0.051);
-  if (d.y > -0.02) { outColor = vec4(bg, 1.0); return; }
+  vec2 q = (vUv - 0.5) * uSize * uGrow;
+  float W = uSize.x, H = uSize.y;
+  float aa = max(fwidth(q.y) * 1.1, 1e-4);
 
-  float t = uHeight / -d.y;
-  vec2 w = vec2(t * d.x, t * d.z) + uPan;
+  vec4 col = vec4(0.0);
 
-  float dist = length(vec3(t * d.x, uHeight, t * d.z));
-  float fog = exp(-dist * 0.021);
-  float horizon = smoothstep(-0.02, -0.55, d.y);          // s'éteint vers le haut
+  /* ---- corps de verre */
+  vec2 bc = vec2(0.0, -H * 0.1175);
+  vec2 bh = vec2(W * 0.5, H * 0.3825);
+  float db = sdRR(q - bc, bh, W * 0.17);
+  float bodyA = 1.0 - smoothstep(-aa, aa, db);
 
-  /* ---- grille */
-  float gx = gridLine(w.x * 2.0, 0.9);
-  float gz = gridLine(w.y * 2.0, 0.9);
-  float grid = max(gx, gz);
-  float majX = gridLine(w.x / uPitchXZ.x, 1.2);
-  float majZ = gridLine(w.y / uPitchXZ.y, 1.2);
-  float major = max(majX, majZ);
+  if (bodyA > 0.0) {
+    vec2 b = (q - bc) / bh;                        // -1..1
 
-  float md = distance(w, uMouse);
-  float glow = uMouseOn * smoothstep(5.0, 0.0, md);
-  vec3 lineCol = vec3(0.92, 0.90, 0.86);
-  vec3 hot = mix(vec3(0.95, 0.16, 0.24), vec3(0.45, 0.35, 1.0), smoothstep(0.0, 4.0, md));
-  vec3 col = bg;
-  col += lineCol * grid * (0.085 + 0.07 * major);
-  col += hot * grid * glow * 0.75;
-  col += vec3(0.95, 0.16, 0.24) * major * 0.05;
+    // air : verre à peine teinté
+    vec4 body = premul(vec3(0.97, 0.93, 0.90), 0.22);
 
-  /* ondes : cercles qui partent du clic, plus un anneau autour du curseur */
-  float ring = uMouseOn * smoothstep(0.12, 0.0, abs(md - 1.15 - 0.1 * sin(uTime * 3.0)));
-  col += hot * ring * 0.18 * smoothstep(5.0, 0.0, md);
-  for (int i = 0; i < 4; i++) {
-    float age = uTime - uRip[i].z;
-    if (uRip[i].w > 0.5 && age > 0.0 && age < 2.2) {
-      float rr = age * 4.2;
-      float rd = distance(w, uRip[i].xy);
-      float k = smoothstep(0.3, 0.0, abs(rd - rr)) * (1.0 - age / 2.2);
-      col += vec3(1.0, 0.45, 0.50) * k * 0.55;
-      col += vec3(0.95, 0.16, 0.24) * k * grid * 1.2;
+    // eau : niveau selon la température, surface qui ondule
+    float level = -1.0 + 2.0 * uFill;
+    float wave = 0.030 * sin(b.x * 5.0 + uTime * 1.25 + uSeed)
+               + 0.018 * sin(b.x * 9.0 - uTime * 0.9 + uSeed * 2.0);
+    float surfY = level + wave;
+    float inWater = 1.0 - smoothstep(-0.012, 0.012, b.y - surfY);
+    float n = vnoise(vec2(b.x * 3.0 + uTime * 0.08, b.y * 4.0 - uTime * 0.12) + uSeed);
+    float cau = pow(1.0 - abs(vnoise(vec2(b.x * 6.0, b.y * 6.0 + uTime * 0.2) + uSeed * 3.0) - 0.5) * 2.0, 4.0);
+    vec3 water = mix(uDeep, uSurf, smoothstep(-1.0, surfY + 0.3, b.y) * 0.75 + n * 0.25);
+    water += cau * 0.16;
+    float foam = smoothstep(0.05, 0.0, abs(b.y - surfY)) * 0.38;
+    water = mix(water, vec3(1.0), foam);
+    body = over(premul(water, 0.97 * inWater), body);
+
+    // étiquette : bande crème, comme sur un pot de confiture
+    float lab = (1.0 - smoothstep(-0.02, 0.02, abs(b.y + 0.42) - 0.34));
+    vec3 paper = vec3(0.957, 0.918, 0.851) * (0.97 + 0.03 * vnoise(q * 90.0));
+    vec4 label = premul(paper, lab);
+    // filet de couleur en haut de l'étiquette, teinte de l'eau
+    float band = (1.0 - smoothstep(-0.02, 0.02, abs(b.y + 0.12) - 0.035)) * lab;
+    label.rgb = mix(label.rgb, uSurf * 0.92, band);
+    // texte
+    vec2 tuv = vec2(b.x * 0.5 + 0.5, 1.0 - (b.y + 0.76) / 0.68);
+    if (tuv.y > 0.0 && tuv.y < 1.0) {
+      vec4 t = texture(uAtlas, vec2((uTile.x + tuv.x) / 2.0, (uTile.y + tuv.y) / 5.0));
+      label.rgb = mix(label.rgb, vec3(0.43, 0.10, 0.19), t.a * lab);
     }
+    body = over(label, body);
+
+    // reflets sur le verre
+    float hl = smoothstep(0.10, 0.0, abs(b.x + 0.74)) * smoothstep(-0.95, 0.4, b.y) * smoothstep(1.0, 0.55, b.y);
+    float hr = smoothstep(0.045, 0.0, abs(b.x - 0.80)) * smoothstep(-0.8, 0.3, b.y);
+    body = over(premul(vec3(1.0), (hl * 0.42 + hr * 0.30) * (1.0 - lab * 0.85)), body);
+    // arête : un filet clair sur le contour
+    float rim = 1.0 - smoothstep(0.0, W * 0.028, -db);
+    body = over(premul(vec3(1.0, 0.98, 0.95), rim * 0.34 * (1.0 - lab * 0.6)), body);
+
+    col = body * bodyA;
   }
 
-  /* ---- tuiles */
-  vec2 q = vec2(w.x, w.y);
-  float row = floor(q.y / uPitchXZ.y);
-  float oddRow = abs(mod(row, 2.0));
-  float colX = (q.x - uShift * oddRow) / uPitchXZ.x;
-  float colI = floor(colX);
-  vec2 loc = vec2(fract(colX) * uPitchXZ.x, q.y - row * uPitchXZ.y);
+  /* ---- col */
+  float dn = sdRR(q - vec2(0.0, H * 0.272), vec2(W * 0.40, H * 0.014), 0.0);
+  col = over(premul(vec3(0.42, 0.42, 0.45), 1.0 - smoothstep(-aa, aa, dn)), col);
 
-  bool inTile = loc.x > uTile.x && loc.x < uTile.y && loc.y > uTile.z && loc.y < uTile.w;
-  if (inTile) {
-    float id = mod(colI + row * uRowStep, 10.0);
-    id = id < 0.0 ? id + 10.0 : id;
-    int ii = int(id + 0.5);
-    vec2 uv = vec2((loc.x - uTile.x) / (uTile.y - uTile.x),
-                   (loc.y - uTile.z) / (uTile.w - uTile.z));
-    // Le sens de la profondeur est inversé : la rangée proche est en bas.
-    vec2 tuv = vec2(uv.x, 1.0 - uv.y);
-
-    bool hovered = uHoverOn > 0.5 && abs(colI - uHover.x) < 0.5 && abs(row - uHover.y) < 0.5;
-    bool selected = abs(id - uSel) < 0.5;
-
-    // eau
-    vec2 wp = tuv * vec2(5.0, 3.0) + float(ii) * 7.31;
-    float tt = uTime * 0.07;
-    float warp = fbm(wp * 0.9 - vec2(tt * 0.8, -tt));
-    float n = fbm(wp + vec2(tt, tt * 0.6) + warp * 1.6);
-    float cau = pow(1.0 - abs(fbm(wp * 1.7 + warp * 2.2 + tt * 2.0) - 0.5) * 2.0, 5.0);
-    vec3 deep = uDeep[ii], surf = uSurf[ii];
-    vec3 water = mix(deep, surf, smoothstep(0.25, 0.85, n));
-    water += cau * 0.22 * (surf + 0.4);
-    // lumière qui glisse sur la tuile survolée
-    float sweep = hovered ? smoothstep(0.35, 0.0, abs(uv.x - fract(uTime * 0.6)) ) * 0.25 : 0.0;
-    water *= hovered ? 1.22 : 1.0;
-    water += sweep;
-    // dégradé vers le bas : le chiffre se lit sur le sombre
-    water *= mix(1.0, 0.45, smoothstep(0.35, 1.0, tuv.y));
-
-    vec4 atlas = texture(uAtlas, vec2((mod(float(ii), 5.0) + uv.x) / 5.0,
-                                     (floor(float(ii) / 5.0) + tuv.y) / 2.0));
-    vec3 tile = mix(water, atlas.rgb, atlas.a);
-
-    // cadre : filet clair, rouge si la tuile est choisie
-    vec2 e = min(uv, 1.0 - uv) * vec2(uTile.y - uTile.x, uTile.w - uTile.z);
-    float edge = min(e.x, e.y);
-    float px = fwidth(edge);
-    float frame = 1.0 - smoothstep(px, px * 2.0, edge);
-    float sframe = 1.0 - smoothstep(px * 2.0, px * 4.5, edge);
-    tile = mix(tile, vec3(1.0, 0.92, 0.88), frame * (hovered ? 0.8 : 0.22));
-    if (selected) tile = mix(tile, vec3(0.97, 0.16, 0.24), sframe);
-
-    float tileFog = mix(0.18, 1.0, fog) * mix(0.35, 1.0, horizon);
-    col = mix(col, tile, 1.0) * tileFog + (selected ? vec3(0.97, 0.16, 0.24) * 0.06 : vec3(0.0));
-  } else {
-    col *= mix(0.25, 1.0, fog) * mix(0.0, 1.0, horizon);
+  /* ---- couvercle d'argent */
+  float dl = sdRR(q - vec2(0.0, H * 0.39), vec2(W * 0.465, H * 0.11), W * 0.05);
+  float lidA = 1.0 - smoothstep(-aa, aa, dl);
+  if (lidA > 0.0) {
+    float x = q.x / (W * 0.465);
+    float y = (q.y - H * 0.39) / (H * 0.11);
+    float sheen = 0.70 + 0.22 * cos(x * 3.1 + 0.6) + 0.10 * smoothstep(0.1, 0.0, abs(x + 0.35));
+    sheen *= 0.92 + 0.08 * y;
+    sheen -= 0.05 * smoothstep(0.0, -1.0, y);
+    float ridge = 0.025 * sin(q.x / W * 150.0);
+    vec3 metal = vec3(sheen + ridge) * vec3(0.97, 0.97, 1.0);
+    col = over(premul(metal, lidA), col);
   }
 
-  col *= uFade;
-  // vignette : le bas de l'écran s'assombrit sous le chiffre et le bouton
-  float vy = smoothstep(-1.0, -0.15, ndc.y);
-  col *= mix(0.55, 1.0, vy);
-  outColor = vec4(col, 1.0);
+  // survol : le bocal se réchauffe d'un voile clair
+  col.rgb += col.a * uHover * 0.05;
+  outColor = col * uAlpha;
 }`;
 
-/* ---------------------------------------------------------------- module */
+/* ------------------------------------------------------------------ matrices */
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const mod = (a, n) => ((a % n) + n) % n;
+
+function mul(a, b) {
+  const o = new Float32Array(16);
+  for (let c = 0; c < 4; c++) {
+    for (let r = 0; r < 4; r++) {
+      let s = 0;
+      for (let k = 0; k < 4; k++) s += a[k * 4 + r] * b[c * 4 + k];
+      o[c * 4 + r] = s;
+    }
+  }
+  return o;
+}
+
+const ident = () => new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+const translate = (x, y, z) => { const m = ident(); m[12] = x; m[13] = y; m[14] = z; return m; };
+const scaleM = (s) => { const m = ident(); m[0] = m[5] = m[10] = s; return m; };
+function rotZ(a) { const m = ident(); const c = Math.cos(a), s = Math.sin(a); m[0] = c; m[1] = s; m[4] = -s; m[5] = c; return m; }
+function rotY(a) { const m = ident(); const c = Math.cos(a), s = Math.sin(a); m[0] = c; m[2] = -s; m[8] = s; m[10] = c; return m; }
+function rotX(a) { const m = ident(); const c = Math.cos(a), s = Math.sin(a); m[5] = c; m[6] = s; m[9] = -s; m[10] = c; return m; }
+
+function perspective(fov, aspect, near, far) {
+  const f = 1 / Math.tan(fov / 2);
+  const m = new Float32Array(16);
+  m[0] = f / aspect; m[5] = f;
+  m[10] = (far + near) / (near - far); m[11] = -1;
+  m[14] = (2 * far * near) / (near - far);
+  return m;
+}
 
 function compile(gl, type, src) {
   const sh = gl.createShader(type);
@@ -239,11 +227,15 @@ function compile(gl, type, src) {
   return sh;
 }
 
+/* ---------------------------------------------------------------- module */
+
 // `spots` : [{ key, name, sub }] dans l'ordre du lac. `bandOf(temp)` donne la
-// bande de couleur, `format(temp)` le texte du chiffre.
-export function initWall({ canvas, spots, bandOf, format, onSelect, onMove, onHover }) {
+// bande de couleur, `format(temp)` le texte du chiffre. `onSelect` est appelé
+// quand un bocal s'immobilise au centre ; `onTap` quand on touche le bocal
+// central.
+export function initWall({ canvas, spots, bandOf, format, onSelect, onTap, area }) {
   const gl = canvas.getContext('webgl2', {
-    antialias: false, alpha: false, powerPreference: 'high-performance',
+    antialias: true, alpha: true, premultipliedAlpha: true, powerPreference: 'high-performance',
   });
   if (!gl) return null;
 
@@ -255,36 +247,31 @@ export function initWall({ canvas, spots, bandOf, format, onSelect, onMove, onHo
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(program));
   } catch (err) {
-    console.warn('Mur 3D indisponible —', err.message);
+    console.warn('Carrousel 3D indisponible —', err.message);
     return null;
   }
   gl.useProgram(program);
 
   const buf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, buf);
-  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.STATIC_DRAW);
   const loc = gl.getAttribLocation(program, 'aPos');
   gl.enableVertexAttribArray(loc);
   gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  for (const n of ['uRes', 'uTime', 'uPan', 'uPitch', 'uFocal', 'uHeight', 'uCurve', 'uMouse',
-    'uMouseOn', 'uHover', 'uHoverOn', 'uSel', 'uRip', 'uFade', 'uDeep', 'uSurf', 'uAtlas',
-    'uPitchXZ', 'uTile', 'uShift', 'uRowStep']) U[n] = gl.getUniformLocation(program, n);
-
-  gl.uniform2f(U.uPitchXZ, SCENE.pitchX, SCENE.pitchZ);
-  gl.uniform4f(U.uTile, SCENE.tileX0, SCENE.tileX1, SCENE.tileZ0, SCENE.tileZ1);
-  gl.uniform1f(U.uShift, SCENE.shift);
-  gl.uniform1f(U.uRowStep, SCENE.rowStep);
-  gl.uniform1f(U.uFocal, SCENE.focal);
-  gl.uniform1f(U.uHeight, SCENE.height);
-  gl.uniform1f(U.uCurve, SCENE.curve);
+  for (const n of ['uMVP', 'uSize', 'uGrow', 'uMode', 'uTime', 'uFill', 'uAlpha', 'uSeed', 'uHover',
+    'uDeep', 'uSurf', 'uTile', 'uAtlas']) U[n] = gl.getUniformLocation(program, n);
+  gl.uniform2f(U.uSize, SCENE.W, SCENE.H);
   gl.uniform1i(U.uAtlas, 0);
 
-  /* ---- atlas : nom et chiffre de chaque lieu, sur fond transparent */
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
+  /* ---- atlas des étiquettes */
   const atlasCanvas = document.createElement('canvas');
   atlasCanvas.width = TILE_W * COLS;
-  atlasCanvas.height = TILE_H * 2;
+  atlasCanvas.height = TILE_H * ROWS;
   const actx = atlasCanvas.getContext('2d');
   const tex = gl.createTexture();
   gl.activeTexture(gl.TEXTURE0);
@@ -294,159 +281,198 @@ export function initWall({ canvas, spots, bandOf, format, onSelect, onMove, onHo
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-  const SERIF = '"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif';
-  const MONO = 'ui-monospace,"SF Mono",Menlo,Consolas,monospace';
+  const SERIF = 'Marcellus,"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif';
   let temps = {};
-
-  function spaced(ctx, text, x, y, gap) {
-    for (const ch of text) { ctx.fillText(ch, x, y); x += ctx.measureText(ch).width + gap; }
-  }
 
   function paintAtlas() {
     actx.clearRect(0, 0, atlasCanvas.width, atlasCanvas.height);
+    actx.fillStyle = '#000';
+    actx.textBaseline = 'alphabetic';
+    actx.textAlign = 'center';
     spots.forEach((spot, i) => {
-      const ox = (i % COLS) * TILE_W;
+      const ox = (i % COLS) * TILE_W + TILE_W / 2;
       const oy = Math.floor(i / COLS) * TILE_H;
-      actx.save();
-      actx.translate(ox, oy);
-      actx.fillStyle = '#fff';
-      actx.textBaseline = 'alphabetic';
-      actx.font = `700 30px ${MONO}`;
-      spaced(actx, spot.name.toUpperCase(), 36, 62, 4);
-      if (spot.sub) {
-        actx.globalAlpha = 0.7;
-        actx.font = `400 22px ${MONO}`;
-        spaced(actx, spot.sub.toUpperCase(), 36, 94, 3);
-        actx.globalAlpha = 1;
+      // Le haut de l'étiquette est occupé par le filet de couleur : le nom
+      // commence en dessous.
+      let size = 66;
+      actx.font = `400 ${size}px ${SERIF}`;
+      const name = spot.name.toUpperCase();
+      while (actx.measureText(name).width > TILE_W - 70 && size > 36) {
+        size -= 4;
+        actx.font = `400 ${size}px ${SERIF}`;
       }
-      actx.textAlign = 'right';
-      actx.globalAlpha = 0.75;
-      actx.font = `400 24px ${MONO}`;
-      actx.fillText(String(i + 1).padStart(2, '0'), TILE_W - 36, 62);
-      actx.globalAlpha = 1;
-      actx.textAlign = 'left';
+      actx.fillText(name, ox, oy + 98);
 
       const t = temps[spot.key];
       const known = typeof t === 'number' && isFinite(t);
-      actx.font = `400 ${known ? 168 : 120}px ${SERIF}`;
-      const txt = known ? format(t) : '—';
-      actx.fillText(txt, 30, TILE_H - 44);
-      if (known) {
-        const w = actx.measureText(txt).width;
-        actx.font = `italic 400 72px ${SERIF}`;
-        actx.fillText('°C', 30 + w + 6, TILE_H - 108);
-      }
-      actx.restore();
+      actx.font = `400 ${known ? 128 : 96}px ${SERIF}`;
+      actx.fillText(known ? `${format(t)}°` : '—', ox, oy + TILE_H - 22);
     });
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlasCanvas);
     gl.generateMipmap(gl.TEXTURE_2D);
-  }
-
-  function paintColors() {
-    const deep = new Float32Array(30);
-    const surf = new Float32Array(30);
-    spots.forEach((spot, i) => {
-      const [d, s] = WATER[bandOf(temps[spot.key])] || WATER.unknown;
-      deep.set(d, i * 3);
-      surf.set(s, i * 3);
-    });
-    gl.uniform3fv(U.uDeep, deep);
-    gl.uniform3fv(U.uSurf, surf);
+    dirty = true;
   }
 
   /* ---- état */
   const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
-  const pan = { x: 0, y: 0 };
-  const vel = { x: 0, y: 0 };
-  let target = null;                 // { x, y } : recentrage animé
-  let selected = -1;
-  let hover = null;                  // { col, row, id }
-  let mouse = { x: 0, y: 0, ndcX: 0, ndcY: 0, on: false, px: 0, py: 0 };
-  let scrollP = 0;
-  let fade = 1;
+  const N = spots.length;
+  let pos = 0;                       // position du carrousel, en bocaux
+  let vel = 0;                       // bocaux par seconde
+  let target = null;                 // entier visé
+  let settledIdx = -1;               // dernier bocal annoncé
+  let dragging = false;
   let width = 1, height = 1;
   let scale = 1;
-  let running = false;
-  let visible = true;
-  let dirty = true;
-  let lastInteract = -99;
-  const ripples = [{ x: 0, y: 0, t: -99, on: 0 }, { x: 0, y: 0, t: -99, on: 0 },
-    { x: 0, y: 0, t: -99, on: 0 }, { x: 0, y: 0, t: -99, on: 0 }];
-  let ripN = 0;
   let clock = 0;
+  let dirty = true;
+  let running = false;
+  let inView = true;
+  let aspect = 1;
+  let fit = 1;                       // échelle des bocaux, selon la place libre
+  let cyUnits = 0.1;                 // hauteur du centre, en unités du monde
+  const mouse = { x: 0, y: 0, on: false };       // en pixels CSS, dans le canvas
+  const hv = new Float32Array(N);                // survol lissé, par bocal
+  const tilt = { x: new Float32Array(N), y: new Float32Array(N) };
+  const quads = Array.from({ length: N }, () => ({ pts: null, d: 99 }));
 
-  const pitchNow = () => clamp(SCENE.pitch + scrollP * SCENE.pitch_scroll
-    - mouse.ndcY * SCENE.pitch_mouse, SCENE.pitchMin, 1.4);
+  const spacing = () => SCENE.W * fit * (aspect < 1 ? 1.16 : 1.34);
+  const camZ = () => 1 / Math.tan(SCENE.fov / 2);
 
-  // Même calcul que le shader : de l'écran (px CSS) au plan du monde.
-  function screenToWorld(px, py, panX = pan.x, panY = pan.y) {
-    const nx = (px / width) * 2 - 1;
-    const ny = 1 - (py / height) * 2;
-    const aspect = width / height;
-    const x = nx * aspect;
-    const y = ny - SCENE.curve * x * x;
-    const pitch = pitchNow();
-    const cp = Math.cos(pitch), sp = Math.sin(pitch);
-    const dx = x, dy = y * cp - SCENE.focal * sp, dz = y * sp + SCENE.focal * cp;
-    if (dy > -0.02) return null;
-    const t = SCENE.height / -dy;
-    return { x: t * dx + panX, y: t * dz + panY };
-  }
-
-  function tileAt(w) {
-    if (!w) return null;
-    const row = Math.floor(w.y / SCENE.pitchZ);
-    const odd = mod(row, 2);
-    const colX = (w.x - SCENE.shift * odd) / SCENE.pitchX;
-    const col = Math.floor(colX);
-    const lx = (colX - col) * SCENE.pitchX;
-    const lz = w.y - row * SCENE.pitchZ;
-    if (lx <= SCENE.tileX0 || lx >= SCENE.tileX1 || lz <= SCENE.tileZ0 || lz >= SCENE.tileZ1) return null;
-    return { col, row, id: mod(col + row * SCENE.rowStep, SCENE.spots) };
-  }
-
-  function tileCenter(col, row) {
+  // Disposition d'un bocal selon sa distance au centre (en bocaux).
+  function place(i) {
+    const d = mod(i - pos + N / 2, N) - N / 2;
+    const ad = Math.abs(d);
+    const t = reduce.matches ? 0 : clock;
+    const float = Math.sin(t * 0.7 + i * 1.7);
     return {
-      x: (col + (SCENE.tileX0 + SCENE.tileX1) / 2 / SCENE.pitchX) * SCENE.pitchX + SCENE.shift * mod(row, 2),
-      y: (row * SCENE.pitchZ) + (SCENE.tileZ0 + SCENE.tileZ1) / 2,
+      d,
+      x: d * spacing(),
+      y: cyUnits - 0.03 * d * d * fit + float * 0.012 + (ad < 0.5 ? 0.02 : 0),
+      z: -0.5 * Math.pow(ad, 1.05),
+      rz: -d * 0.17 + Math.sin(t * 0.5 + i) * 0.025 + (d > 0 ? 0.05 : d < 0 ? -0.05 : 0),
+      ry: -d * 0.10,
+      s: (1 - 0.04 * ad) * fit,
+      alpha: clamp(1 - (ad - 2.8) * 0.9, 0, 1),
     };
   }
 
-  // Le plus proche des tuiles portant ce lieu, vu depuis le centre actuel.
-  function nearestTileOf(id) {
-    const c = screenToWorld(width / 2, height * 0.36) || { x: pan.x, y: pan.y };
-    const r0 = Math.round(c.y / SCENE.pitchZ);
-    let best = null;
-    for (let row = r0 - 4; row <= r0 + 4; row++) {
-      // colonne telle que mod(col + row*step, 10) = id, la plus proche de c.x
-      const base = mod(id - row * SCENE.rowStep, SCENE.spots);
-      const colGuess = Math.round((c.x - SCENE.shift * mod(row, 2)) / SCENE.pitchX);
-      for (let k = -SCENE.spots; k <= SCENE.spots; k++) {
-        const col = colGuess + k;
-        if (mod(col, SCENE.spots) !== base) continue;
-        const ctr = tileCenter(col, row);
-        const d = (ctr.x - c.x) ** 2 + ((ctr.y - c.y) * 2.2) ** 2;
-        if (!best || d < best.d) best = { d, ctr };
-      }
+  function matrices(i, p) {
+    const proj = perspective(SCENE.fov, aspect, 0.1, 30);
+    const view = translate(0, 0, -camZ());
+    const lift = hv[i];
+    let m = translate(p.x, p.y, p.z + lift * 0.12);
+    m = mul(m, rotZ(p.rz));
+    m = mul(m, rotY(p.ry + tilt.x[i] * 0.35));
+    m = mul(m, rotX(-tilt.y[i] * 0.25));
+    m = mul(m, scaleM(p.s * (1 + lift * 0.05)));
+    return { mvp: mul(proj, mul(view, m)), model: m, proj, view };
+  }
+
+  // Coins d'un bocal à l'écran (px CSS), pour savoir ce qu'on touche.
+  function project(mvp, w, h) {
+    const hw = SCENE.W / 2, hh = SCENE.H / 2;
+    return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(([x, y]) => {
+      const cx = mvp[0] * x + mvp[4] * y + mvp[12];
+      const cy = mvp[1] * x + mvp[5] * y + mvp[13];
+      const cw = mvp[3] * x + mvp[7] * y + mvp[15];
+      return [(cx / cw * 0.5 + 0.5) * w, (1 - (cy / cw * 0.5 + 0.5)) * h];
+    });
+  }
+
+  function inQuad(pt, q) {
+    // convexe : même signe pour les quatre arêtes
+    let sign = 0;
+    for (let k = 0; k < 4; k++) {
+      const a = q[k], b = q[(k + 1) % 4];
+      const cr = (b[0] - a[0]) * (pt[1] - a[1]) - (b[1] - a[1]) * (pt[0] - a[0]);
+      if (cr === 0) continue;
+      const sg = cr > 0 ? 1 : -1;
+      if (sign && sg !== sign) return false;
+      sign = sg;
     }
-    return best?.ctr || null;
+    return true;
   }
 
-  function centerOn(ctr) {
-    // Le point visé à l'écran est le milieu de la zone libre, au-dessus du chiffre.
-    const ref = screenToWorld(width / 2, height * 0.36, 0, 0);
-    if (!ref) return;
-    target = { x: ctr.x - ref.x, y: ctr.y - ref.y };
-    vel.x = vel.y = 0;
+  function pickIndex(px, py) {
+    let best = -1;
+    let bestD = 99;
+    for (let i = 0; i < N; i++) {
+      const q = quads[i];
+      if (!q.pts || Math.abs(q.d) > 3) continue;
+      if (inQuad([px, py], q.pts) && Math.abs(q.d) < bestD) { best = i; bestD = Math.abs(q.d); }
+    }
+    return best;
   }
 
-  /* ---- taille et rendu */
+  /* ---- couleurs & dessin */
+  function colorsFor(i) {
+    return WATER[bandOf(temps[spots[i].key])] || WATER.unknown;
+  }
+
+  function fillFor(i) {
+    const t = temps[spots[i].key];
+    if (typeof t !== 'number' || !isFinite(t)) return 0.4;
+    return 0.30 + 0.56 * clamp(t / 24, 0, 1);
+  }
+
+  function draw() {
+    gl.clearColor(0, 0, 0, 0);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.uniform1f(U.uTime, clock);
+
+    const order = [];
+    for (let i = 0; i < N; i++) order.push([i, place(i)]);
+    // du plus loin au plus proche
+    order.sort((a, b) => a[1].z - b[1].z);
+
+    for (const [i, p] of order) {
+      const { mvp, proj, view } = matrices(i, p);
+      quads[i].pts = project(mvp, width, height);
+      quads[i].d = p.d;
+      if (p.alpha <= 0.01) continue;
+
+      // ombre posée sous le bocal
+      let sh = translate(p.x + p.rz * 0.1, p.y - SCENE.H * 0.52 * p.s, p.z - 0.02);
+      sh = mul(sh, scaleM(p.s));
+      gl.uniformMatrix4fv(U.uMVP, false, mul(proj, mul(view, sh)));
+      gl.uniform1i(U.uMode, 1);
+      gl.uniform1f(U.uAlpha, p.alpha);
+      gl.uniform1f(U.uGrow, 1.0);
+      gl.uniform2f(U.uSize, SCENE.W * 1.25, SCENE.H * 0.1);
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+      gl.uniform2f(U.uSize, SCENE.W, SCENE.H);
+
+      const [deep, surf] = colorsFor(i);
+      gl.uniformMatrix4fv(U.uMVP, false, mvp);
+      gl.uniform1i(U.uMode, 0);
+      gl.uniform1f(U.uAlpha, p.alpha);
+      gl.uniform1f(U.uGrow, 1.0);
+      gl.uniform1f(U.uFill, fillFor(i));
+      gl.uniform1f(U.uSeed, i * 3.7);
+      gl.uniform1f(U.uHover, hv[i]);
+      gl.uniform3f(U.uDeep, deep[0], deep[1], deep[2]);
+      gl.uniform3f(U.uSurf, surf[0], surf[1], surf[2]);
+      gl.uniform2f(U.uTile, i % COLS, Math.floor(i / COLS));
+      gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    }
+  }
+
   function resize() {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    width = Math.max(1, window.innerWidth);
-    height = Math.max(1, window.innerHeight);
+    const r = canvas.getBoundingClientRect();
+    width = Math.max(1, r.width);
+    height = Math.max(1, r.height);
+    aspect = width / height;
+    // Place libre : sous l'en-tête, au-dessus de la pastille du lieu. Les bocaux
+    // s'y rangent, quelle que soit la forme de l'écran.
+    const [top, bottom] = area ? area(width, height) : [height * 0.12, height * 0.68];
+    const freeUnits = Math.max(0.4, ((bottom - top) / height) * 2);
+    const byHeight = (freeUnits * 0.84) / SCENE.H;
+    const byWidth = aspect < 1 ? (2 * aspect * 0.62) / SCENE.W : 9;
+    fit = clamp(Math.min(byHeight, byWidth), 0.45, 1.05);
+    cyUnits = (1 - ((top + bottom) / 2 / height) * 2) - 0.02;
     const w = Math.round(width * dpr * scale);
     const h = Math.round(height * dpr * scale);
     if (canvas.width !== w || canvas.height !== h) {
@@ -457,248 +483,212 @@ export function initWall({ canvas, spots, bandOf, format, onSelect, onMove, onHo
     dirty = true;
   }
 
-  function draw() {
-    gl.uniform2f(U.uRes, canvas.width, canvas.height);
-    gl.uniform1f(U.uTime, clock);
-    gl.uniform2f(U.uPan, pan.x, pan.y);
-    gl.uniform1f(U.uPitch, pitchNow());
-    gl.uniform2f(U.uMouse, mouse.wx ?? 0, mouse.wy ?? 0);
-    gl.uniform1f(U.uMouseOn, mouse.on && mouse.wx != null ? 1 : 0);
-    gl.uniform2f(U.uHover, hover ? hover.col : 0, hover ? hover.row : 0);
-    gl.uniform1f(U.uHoverOn, hover ? 1 : 0);
-    gl.uniform1f(U.uSel, selected);
-    gl.uniform1f(U.uFade, fade);
-    const rip = new Float32Array(16);
-    ripples.forEach((r, i) => rip.set([r.x, r.y, r.t, r.on], i * 4));
-    gl.uniform4fv(U.uRip, rip);
-    gl.drawArrays(gl.TRIANGLES, 0, 3);
+  function announce() {
+    const idx = mod(Math.round(pos), N);
+    if (idx === settledIdx) return;
+    settledIdx = idx;
+    onSelect?.(spots[idx]);
   }
 
-  // Qualité adaptative : si l'appareil peine, on baisse la définition plutôt
-  // que de saccader. Une fois baissée, elle ne remonte pas — elle ne ferait
-  // qu'osciller.
-  let slow = 0;
-  let frames = 0;
-  let prev = 0;
-  let lastSend = 0;
+  let slow = 0, frames = 0, prev = 0;
 
   function frame(now) {
     if (!running) return;
     requestAnimationFrame(frame);
-    const dt = Math.min(0.05, (now - prev) / 1000 || 0.016);
-    const rawDt = (now - prev) || 16;
+    const rawDt = now - prev || 16;
+    const dt = Math.min(0.05, rawDt / 1000);
     prev = now;
-    if (!visible) return;
+    if (!inView || document.hidden) return;
 
     if (!reduce.matches) clock += dt;
+    let moving = false;
 
-    // recentrage animé, sinon inertie, sinon dérive lente au repos
-    let moved = false;
-    if (target) {
-      const k = 1 - Math.exp(-dt * 5.5);
-      pan.x += (target.x - pan.x) * k;
-      pan.y += (target.y - pan.y) * k;
-      if (Math.abs(target.x - pan.x) + Math.abs(target.y - pan.y) < 0.004) target = null;
-      moved = true;
+    if (target !== null) {
+      const k = 1 - Math.exp(-dt * 7);
+      pos += (target - pos) * k;
+      moving = true;
+      if (Math.abs(target - pos) < 0.003) { pos = target; target = null; announce(); }
     } else if (!dragging) {
-      if (Math.abs(vel.x) + Math.abs(vel.y) > 0.01) {
-        pan.x += vel.x * dt;
-        pan.y += vel.y * dt;
-        const f = Math.exp(-dt * 3.2);
-        vel.x *= f; vel.y *= f;
-        moved = true;
-      } else if (!reduce.matches && clock - lastInteract > 5) {
-        pan.x += 0.16 * dt;
-        pan.y += 0.04 * dt;
-        moved = true;
+      if (Math.abs(vel) > 0.04) {
+        pos += vel * dt;
+        vel *= Math.exp(-dt * 3.4);
+        moving = true;
+        if (Math.abs(vel) <= 0.04) target = Math.round(pos);
+      } else if (Math.abs(pos - Math.round(pos)) > 0.003) {
+        target = Math.round(pos);
       }
     }
-    if (moved || dragging) refreshHover();
-    if (moved && now - lastSend > 80) { lastSend = now; onMove?.(pan.x, pan.y); }
 
-    if (!reduce.matches || dirty || moved) { draw(); dirty = false; }
+    // survol et inclinaison lissés
+    const centerD = [];
+    for (let i = 0; i < N; i++) {
+      const q = quads[i];
+      let want = 0, tx = 0, ty = 0;
+      if (mouse.on && !dragging && q.pts && Math.abs(q.d) < 3 && inQuad([mouse.x, mouse.y], q.pts)
+          && pickIndex(mouse.x, mouse.y) === i) {
+        want = 1;
+        const cx = (q.pts[0][0] + q.pts[2][0]) / 2, cy = (q.pts[0][1] + q.pts[2][1]) / 2;
+        const bw = Math.abs(q.pts[1][0] - q.pts[0][0]) || 1, bh = Math.abs(q.pts[3][1] - q.pts[0][1]) || 1;
+        tx = clamp((mouse.x - cx) / bw * 2, -1, 1);
+        ty = clamp((mouse.y - cy) / bh * 2, -1, 1);
+      }
+      const k = 1 - Math.exp(-dt * 9);
+      if (Math.abs(hv[i] - want) > 0.001 || Math.abs(tilt.x[i] - tx) > 0.001) moving = true;
+      hv[i] += (want - hv[i]) * k;
+      tilt.x[i] += (tx - tilt.x[i]) * k;
+      tilt.y[i] += (ty - tilt.y[i]) * k;
+      centerD.push(want);
+    }
+    const hovering = centerD.some(Boolean);
+    if (canvas.style.cursor !== (dragging ? 'grabbing' : hovering ? 'pointer' : 'grab')) {
+      canvas.style.cursor = dragging ? 'grabbing' : hovering ? 'pointer' : 'grab';
+    }
+
+    if (!reduce.matches || dirty || moving || dragging) { draw(); dirty = false; }
 
     frames++;
-    if (rawDt > 30) slow++; else slow = Math.max(0, slow - 0.2);
-    if (frames > 60 && slow > 40 && scale > 0.55) {
-      scale = Math.max(0.55, scale - 0.15);
+    if (rawDt > 34) slow++; else slow = Math.max(0, slow - 0.2);
+    if (frames > 60 && slow > 40 && scale > 0.6) {
+      scale = Math.max(0.6, scale - 0.15);
       slow = 0;
       resize();
     }
   }
 
-  function start() {
-    if (running) return;
-    running = true;
-    prev = performance.now();
-    requestAnimationFrame(frame);
-  }
-
   /* ---- pointeur */
-  let dragging = false;
   let down = null;
-  let grab = null;
+  let lastMove = 0;
 
-  const interactive = (el) => el && el.closest && el.closest(
-    'button, a, select, input, label, summary, details, .card, .facts, .ticker, .timer, .onboarding, .toast, .head');
-
-  function refreshHover() {
-    if (!mouse.on) { setHover(null); return; }
-    const w = screenToWorld(mouse.px, mouse.py);
-    mouse.wx = w ? w.x : null;
-    mouse.wy = w ? w.y : null;
-    const t = dragging ? null : tileAt(w);
-    setHover(t);
-  }
-
-  function setHover(t) {
-    const same = (!t && !hover) || (t && hover && t.col === hover.col && t.row === hover.row);
-    if (same) return;
-    hover = t;
-    canvas.style.cursor = t ? 'pointer' : (dragging ? 'grabbing' : 'grab');
-    onHover?.(t ? spots[t.id] : null);
-    dirty = true;
-  }
+  const rel = (e) => {
+    const r = canvas.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  };
 
   function onDown(e) {
-    if (!e.isPrimary || e.button > 0 || interactive(e.target)) return;
-    if (scrollP > 0.9) return;
-    down = { x: e.clientX, y: e.clientY, t: performance.now() };
-    grab = screenToWorld(e.clientX, e.clientY);
+    if (!e.isPrimary || e.button > 0) return;
+    const [x, y] = rel(e);
+    down = { x, y, px: x, t: performance.now(), moved: false };
     dragging = false;
     target = null;
-    vel.x = vel.y = 0;
-    lastInteract = clock;
+    vel = 0;
+    canvas.setPointerCapture?.(e.pointerId);
   }
 
   function onMovePtr(e) {
-    mouse.px = e.clientX; mouse.py = e.clientY;
-    mouse.ndcX = (e.clientX / width) * 2 - 1;
-    mouse.ndcY = 1 - (e.clientY / height) * 2;
-    const over = !interactive(e.target) && scrollP < 0.9;
-    mouse.on = over && e.pointerType !== 'touch';
-    if (down && grab) {
-      const dx = e.clientX - down.x, dy = e.clientY - down.y;
-      if (!dragging && dx * dx + dy * dy > 36) { dragging = true; canvas.style.cursor = 'grabbing'; }
-      if (dragging) {
-        // Le point saisi reste sous le doigt : on déplace le plan de l'écart.
-        const w = screenToWorld(e.clientX, e.clientY);
-        if (w) {
-          const ddx = grab.x - w.x, ddy = grab.y - w.y;
-          pan.x += ddx; pan.y += ddy;
-          const dt = Math.max(0.008, (performance.now() - (onMovePtr.last || performance.now() - 16)) / 1000);
-          vel.x = vel.x * 0.6 + (ddx / dt) * 0.4;
-          vel.y = vel.y * 0.6 + (ddy / dt) * 0.4;
-        }
-        lastInteract = clock;
-        dirty = true;
-      }
-    }
-    onMovePtr.last = performance.now();
-    refreshHover();
+    const [x, y] = rel(e);
+    mouse.x = x; mouse.y = y;
+    mouse.on = e.pointerType !== 'touch';
     dirty = true;
+    if (!down) return;
+    const dx = x - down.x, dy = y - down.y;
+    if (!dragging && dx * dx + dy * dy > 49) {
+      // Le geste est-il surtout vertical ? Alors c'est la page qui défile.
+      if (Math.abs(dy) > Math.abs(dx) * 1.3 && e.pointerType === 'touch') { down = null; return; }
+      dragging = true;
+      down.moved = true;
+    }
+    if (dragging) {
+      const now = performance.now();
+      const unitsPerPx = 2 / height;
+      const delta = -(x - down.px) * unitsPerPx / spacing();
+      pos += delta;
+      const dt = Math.max(0.008, (now - (lastMove || now - 16)) / 1000);
+      vel = vel * 0.6 + (delta / dt) * 0.4;
+      lastMove = now;
+      down.px = x;
+    }
   }
 
   function onUp(e) {
     if (!down) return;
-    const wasDrag = dragging;
-    dragging = false;
     const d = down;
     down = null;
-    canvas.style.cursor = hover ? 'pointer' : 'grab';
+    const wasDrag = dragging;
+    dragging = false;
     if (wasDrag) {
-      // Un geste lent ne doit pas partir en glissade.
-      if (performance.now() - (onMovePtr.last || 0) > 90) vel.x = vel.y = 0;
-      const sp = Math.hypot(vel.x, vel.y);
-      if (sp > 14) { vel.x *= 14 / sp; vel.y *= 14 / sp; }
+      if (performance.now() - lastMove > 90) vel = 0;
+      vel = clamp(vel, -9, 9);
+      if (Math.abs(vel) <= 0.04) target = Math.round(pos);
       return;
     }
-    // Un simple appui : onde, et sélection si une tuile est dessous.
-    const w = screenToWorld(d.x, d.y);
-    if (!w) return;
-    ripples[ripN] = { x: w.x, y: w.y, t: clock, on: 1 };
-    ripN = (ripN + 1) % ripples.length;
-    const t = tileAt(w);
-    if (t) {
-      const ctr = tileCenter(t.col, t.row);
-      centerOn(ctr);
-      // Marqué avant d'appeler dehors : sinon `setSelected` recentrerait sur une
-      // autre tuile du même lieu, plus proche du centre que celle qu'on a touchée.
-      selected = t.id;
-      onSelect?.(spots[t.id]);
-    }
-    dirty = true;
+    // simple appui
+    const i = pickIndex(d.x, d.y);
+    if (i < 0) return;
+    const q = quads[i];
+    if (Math.abs(q.d) < 0.5) { onTap?.(spots[i]); return; }
+    target = Math.round(pos + q.d);
+    vel = 0;
   }
 
   function onWheel(e) {
-    if (scrollP > 0.5 || interactive(e.target)) return;
-    // Sur le mur, la molette le fait glisser tant qu'on reste sur le premier
-    // écran ; Maj ou un geste surtout horizontal suffit à le déplacer de côté.
-    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) * 0.8) {
-      e.preventDefault();
-      target = null;
-      pan.x += e.deltaX * 0.012;
-      lastInteract = clock;
-      dirty = true;
-    }
-  }
-
-  function onLeave() { mouse.on = false; setHover(null); dirty = true; }
-
-  function onScroll() {
-    const p = clamp(window.scrollY / Math.max(1, window.innerHeight), 0, 1.6);
-    if (p === scrollP) return;
-    scrollP = p;
-    fade = 1 - clamp((p - 0.15) / 0.85, 0, 1) * 0.9;
-    visible = p < 1.4;
+    // Seul un geste surtout horizontal fait tourner les bocaux ; le vertical
+    // reste à la page.
+    if (Math.abs(e.deltaX) <= Math.abs(e.deltaY) * 0.8) return;
+    e.preventDefault();
+    target = null;
+    pos += e.deltaX * 0.0025;
+    vel = 0;
     dirty = true;
-    if (!mouse.on) hover && setHover(null);
+    clearTimeout(onWheel.timer);
+    onWheel.timer = setTimeout(() => { target = Math.round(pos); }, 140);
   }
 
-  window.addEventListener('pointerdown', onDown, { passive: true });
-  window.addEventListener('pointermove', onMovePtr, { passive: true });
-  window.addEventListener('pointerup', onUp, { passive: true });
-  window.addEventListener('pointercancel', () => { down = null; dragging = false; });
-  document.documentElement.addEventListener('pointerleave', onLeave);
-  window.addEventListener('wheel', onWheel, { passive: false });
-  window.addEventListener('scroll', onScroll, { passive: true });
-  window.addEventListener('resize', resize);
-  document.addEventListener('visibilitychange', () => { visible = !document.hidden && scrollP < 1.4; dirty = true; });
+  function onLeave() { mouse.on = false; dirty = true; }
+
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointermove', onMovePtr);
+  canvas.addEventListener('pointerup', onUp);
+  canvas.addEventListener('pointercancel', () => { down = null; dragging = false; });
+  canvas.addEventListener('pointerleave', onLeave);
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  // La taille du canvas vient du CSS, qui peut arriver après ce script : on suit
+  // la boîte elle-même plutôt que la fenêtre, sans quoi le tampon resterait à
+  // 1 × 1 pixel, étiré sur tout l'écran.
+  if ('ResizeObserver' in window) new ResizeObserver(resize).observe(canvas);
+  else window.addEventListener('resize', resize);
   reduce.addEventListener?.('change', () => { dirty = true; });
   canvas.addEventListener('webglcontextlost', (e) => { e.preventDefault(); running = false; });
   canvas.addEventListener('webglcontextrestored', () => location.reload());
 
+  // Rien à dessiner quand le premier écran n'est plus visible.
+  if ('IntersectionObserver' in window) {
+    new IntersectionObserver((entries) => {
+      inView = entries[entries.length - 1].isIntersecting;
+      dirty = true;
+    }).observe(canvas);
+  }
+
   resize();
-  paintColors();
   paintAtlas();
-  onScroll();
-  centerOn(tileCenter(0, 1));
-  pan.x = target.x; pan.y = target.y; target = null;
-  start();
-  canvas.style.cursor = 'grab';
+  // La police du titre arrive après le premier dessin : on repeint l'atlas.
+  document.fonts?.load('400 40px Marcellus').then(paintAtlas).catch(() => {});
+  running = true;
+  prev = performance.now();
+  requestAnimationFrame(frame);
 
   /* ---- API */
   return {
-    // Températures par lieu (clé → °C) : repeint les chiffres et la couleur de l'eau.
+    // Températures par lieu (clé → °C) : repeint les chiffres, l'eau et sa couleur.
     setTemps(next) {
       temps = next || {};
-      paintColors();
       paintAtlas();
+    },
+    // Lieu choisi ailleurs (liste, clavier, géolocalisation) : le carrousel suit.
+    setSelected(key) {
+      const idx = spots.findIndex((s) => s.key === key);
+      if (idx < 0) return;
+      settledIdx = idx;           // déjà connu de l'extérieur : pas d'écho
+      const cur = mod(Math.round(pos), N);
+      if (cur === idx && target === null) return;
+      let delta = idx - cur;
+      if (delta > N / 2) delta -= N;
+      if (delta < -N / 2) delta += N;
+      target = Math.round(pos) + delta;
+      vel = 0;
       dirty = true;
     },
-    // Lieu choisi ailleurs (liste, clavier, géolocalisation) : le mur le suit.
-    setSelected(key, { focus = true } = {}) {
-      const id = spots.findIndex((s) => s.key === key);
-      if (id < 0 || id === selected) return;
-      selected = id;
-      if (focus) {
-        const ctr = nearestTileOf(id);
-        if (ctr) centerOn(ctr);
-        lastInteract = clock;
-      }
-      dirty = true;
-    },
-    pan: () => ({ ...pan }),
+    // La place libre a changé (la phrase du jour passe sur deux lignes, par exemple).
+    relayout: resize,
     destroy() { running = false; },
   };
 }

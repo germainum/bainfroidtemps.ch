@@ -28,10 +28,9 @@
       content="La température de l'eau du Léman en temps réel et la durée idéale de votre bain froid : 1 minute par degré. Respirez, puis entrez.">
 <link rel="canonical" href="https://bainfroidtemps.ch/">
 
-<!-- Un seul thème, sombre : le mur du lac en est le fond, et il n'a pas de
-     version claire. La barre d'état d'iOS suit le noir de la page. -->
-<meta name="theme-color" content="#0c0c0d">
-<meta name="color-scheme" content="dark">
+<!-- Un seul thème, clair : la barre d'état d'iOS suit le crème de la page. -->
+<meta name="theme-color" content="#fdf3ec">
+<meta name="color-scheme" content="light">
 
 <!-- Open Graph : WhatsApp, Facebook, LinkedIn -->
 <meta property="og:type" content="website">
@@ -57,7 +56,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Léman">
 
 <!-- Icône de l'écran d'accueil iOS -->
@@ -159,82 +158,95 @@
 }
 </script>
 
+<link rel="preload" href="fonts/marcellus.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="app.css">
 </head>
 <body data-band="unknown">
 
-<!-- Le mur du lac : le fond de tout le site. Un plan en perspective couvert de
-     tuiles, dessiné par `wall.js`. Décoratif — la température se lit sans lui,
-     et sans WebGL il disparaît et laisse le fond uni. -->
-<canvas id="wall" aria-hidden="true"></canvas>
-
-<!-- En-tête en cases bordées. Fixe : le logo, le lieu et la température du
-     moment restent sous les yeux quand on parcourt le reste de la page. -->
+<!-- En-tête : deux commandes à gauche, le logo au centre, le menu à droite.
+     Fixe, transparent sur le crème d'accueil. -->
 <header class="head">
-  <nav class="head-nav" aria-label="Navigation">
-    <a href="#top">Accueil</a>
-    <a href="#aujourdhui">Lieux</a>
-    <a href="#duree">Durée</a>
-    <a href="#faq">Questions</a>
-    <span class="head-space"></span>
-    <button id="locate" class="ghost" type="button" aria-label="Le lieu le plus proche de moi">
+  <div class="head-side">
+    <button id="locate" class="ghost" type="button" aria-label="Le lieu le plus proche de moi" title="Me localiser">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 3 3 10.5l7.5 3 3 7.5L21 3Z"/></svg>
-      <span>Me localiser</span>
     </button>
-    <button id="refresh" class="ghost" type="button" aria-label="Actualiser">
+    <button id="refresh" class="ghost" type="button" aria-label="Actualiser" title="Actualiser">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v4h-4"/></svg>
-      <span>Actualiser</span>
     </button>
-  </nav>
-  <div class="head-main">
-    <a class="head-mark" href="#top" aria-label="Bains Froids Léman — accueil">
-      <svg class="mark" viewBox="0 0 44 30" role="img" aria-label="Lac Léman">
-        <path d="M2 9c5-5 9-5 14 0s9 5 14 0 9-5 12-2"/>
-        <path d="M2 19c5-5 9-5 14 0s9 5 14 0 9-5 12-2"/>
-      </svg>
-    </a>
-    <p class="head-tag head-tag-l" data-letters>Température + Durée + Souffle</p>
-    <a class="head-logo" href="#top" data-letters>Bains Froids <i>Léman</i></a>
-    <p class="head-tag head-tag-r" data-letters>L’eau du lac, en direct</p>
-    <a class="head-temp" href="#top" aria-label="Lieu et température choisis">
-      <span id="headSpot">Genève</span>
-      <b id="headVal">--°</b>
-    </a>
+  </div>
+  <a class="head-logo" href="#top" aria-label="Bains Froids Léman — accueil">
+    <svg class="mark" viewBox="0 0 44 30" aria-hidden="true">
+      <path d="M2 9c5-5 9-5 14 0s9 5 14 0 9-5 12-2"/>
+      <path d="M2 19c5-5 9-5 14 0s9 5 14 0 9-5 12-2"/>
+    </svg>
+    <span class="logo-1">Bains Froids</span>
+    <span class="logo-2">Léman</span>
+  </a>
+  <div class="head-side head-right">
+    <button id="menuBtn" class="menu-btn" type="button" aria-expanded="false" aria-controls="menu">
+      <span class="pill" id="menuLabel">Menu</span>
+      <span class="dot" aria-hidden="true"><svg viewBox="0 0 12 12"><path d="M6 1.5 10.5 6 6 10.5 1.5 6Z"/></svg></span>
+    </button>
   </div>
 </header>
 
-<div class="app">
-  <!-- Écran de préparation : température, durée, sélecteur du lieu. L'action
-       vit dans son propre bandeau fixe, ci-dessous : toujours visible. -->
-  <section class="screen" id="top">
-    <p class="coords" aria-hidden="true"><span id="coordA">46.2225 N</span><span id="coordB">6.1589 E</span></p>
-    <div class="hero">
-      <!-- Choix du lieu : un vrai <select>, donc la roue native d'iOS — plus sûre
-           au pouce qu'une liste maison, et lisible par VoiceOver sans effort.
-           Le mur offre le même choix, au toucher. -->
-      <p class="whereat">
-        <label for="spot">Je m’immerge à</label>
-        <span class="pick">
-          <select id="spot" aria-label="Lieu de baignade"></select>
-          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4"/></svg>
-        </span>
-        <span class="whereat-far" id="spotDistance"></span>
-      </p>
-      <div class="readout" aria-live="polite">
-        <p class="readout-value"><span id="value">--</span><span class="degree">°</span></p>
-        <p class="readout-source" id="readoutSource"></p>
-      </div>
-      <!-- Ce que l'app dit du jour. Change avec la température et avec la date :
-           sans cela, la même phrase deux semaines de suite ne veut plus rien dire. -->
-      <p class="greeting" id="greeting"></p>
+<!-- Menu plein écran : de grands liens en serif, décalés d'un cran à chaque
+     ligne. Les ancres sont celles du texte rédigé plus bas. -->
+<nav class="menu" id="menu" aria-label="Navigation" aria-hidden="true">
+  <ul>
+    <li style="--i:0"><a href="#top" class="current">Accueil</a></li>
+    <li style="--i:1"><a href="#lac">Le lac</a></li>
+    <li style="--i:2"><a href="#aujourdhui">Les lieux</a></li>
+    <li style="--i:3"><a href="#duree">La durée</a></li>
+    <li style="--i:4"><a href="#entrer">Entrer dans l’eau</a></li>
+    <li style="--i:5"><a href="#faq">Questions</a></li>
+  </ul>
+</nav>
+
+<!-- Écran d'accueil : une grande forme bordeaux, un titre sur un arc, et dix
+     bocaux de verre — un par lieu — dessinés en WebGL (`wall.js`). Les bocaux
+     sont décoratifs : la température se lit dans la carte en dessous, et sans
+     WebGL il ne reste que le crème et la forme. -->
+<section class="screen" id="top">
+  <div class="stage" aria-hidden="true">
+    <svg class="blob" viewBox="0 0 1000 1000">
+      <polygon points="500,130 761,239 870,500 761,761 500,870 239,761 130,500 239,239"
+               transform="rotate(22.5 500 500)"/>
+    </svg>
+    <div class="arc">
+      <svg viewBox="0 0 1000 1000">
+        <defs><path id="arcPath" d="M 500,500 m -430,0 a 430,430 0 1,1 860,0 a 430,430 0 1,1 -860,0"/></defs>
+        <text><textPath href="#arcPath" textLength="2690" lengthAdjust="spacing">BAINS FROIDS • LÉMAN • EAU VIVE •</textPath></text>
+      </svg>
     </div>
-    <p class="drag-hint" aria-hidden="true"><span class="drag-dot"></span>Glissez le mur, touchez un lieu</p>
-    <!-- Bandeau défilant : les dix lieux d'un coup d'œil. Redondant avec la
-         liste rédigée plus bas, donc masqué aux lecteurs d'écran. -->
-    <div class="ticker" aria-hidden="true"><div class="ticker-track" id="tickerTrack"></div></div>
-  </section>
+  </div>
+  <canvas id="wall" aria-hidden="true"></canvas>
+  <!-- Le lieu, la température et la phrase du jour, dans une pastille crème. -->
+  <div class="hero">
+    <!-- Choix du lieu : un vrai <select>, donc la roue native d'iOS — plus sûre
+         au pouce qu'une liste maison, et lisible par VoiceOver sans effort.
+         Les bocaux offrent le même choix, au toucher. -->
+    <p class="whereat">
+      <label for="spot">Je m’immerge à</label>
+      <span class="pick">
+        <select id="spot" aria-label="Lieu de baignade"></select>
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6.5 8 10.5l4-4"/></svg>
+      </span>
+      <span class="whereat-far" id="spotDistance"></span>
+    </p>
+    <div class="readout" aria-live="polite">
+      <p class="readout-value"><span id="value">--</span><span class="degree">°</span></p>
+      <p class="readout-source" id="readoutSource"></p>
+    </div>
+    <!-- Ce que l'app dit du jour. Change avec la température et avec la date :
+         sans cela, la même phrase deux semaines de suite ne veut plus rien dire. -->
+    <p class="greeting" id="greeting"></p>
+  </div>
+</section>
+
+<div class="app">
   <!-- Repères, séries et durée : sous le mur, dans des cases bordées. -->
-  <section class="block now reveal">
+  <section class="block now reveal" id="now">
     <ul class="facts">
       <li>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17.5 9.5 12l3.5 3.5L20 8"/><path d="M15 8h5v5"/></svg>
@@ -276,7 +288,7 @@
   </div>
 
   <!-- La carte : comparer les lieux vient après le geste. -->
-  <section class="block reveal">
+  <section class="block reveal" id="lac">
     <h2 class="micro">Le lac <span class="micro-note">touchez un point pour changer de lieu</span></h2>
     <div class="card">
       <div class="map" id="map"></div>

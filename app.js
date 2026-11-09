@@ -27,7 +27,7 @@ let refreshing = false;
 let spotTemps = {};       // température par lieu, pour la carte
 let lastSeries = [];      // dernier rendu, pour repeindre sans refaire le réseau
 let lastHint = 'modèle Eawag';
-let wall = null;          // le mur 3D ; null sans WebGL2
+let wall = null;          // le carrousel 3D ; null sans WebGL2
 let heroValue = null;     // chiffre du lieu choisi, pour l'en-tête et le mur
 
 /* ------------------------------------------------------------------ affichage */
@@ -237,7 +237,6 @@ function renderPicker() {
 // le sélecteur suit, sinon il annoncerait un autre endroit que la température.
 function syncPicker() {
   $('spot').value = currentSpot.key;
-  $('headSpot').textContent = currentSpot.name;
   wall?.setSelected(currentSpot.key);
   $('spotDistance').textContent = located?.key === currentSpot.key
     ? `à ${formatKm(located.km)} km de vous`
@@ -272,7 +271,6 @@ function renderHero({ value, at, kind, label }) {
   document.body.dataset.band = mood(value).band;
   showValue(value);
   heroValue = value;
-  $('headVal').textContent = `${formatTemp(value)}°`;
 
   syncPicker();
   // Le détail de la source vit dans les trois repères ci-dessous ; cette ligne
@@ -380,21 +378,13 @@ function paint(stations, series, hint = 'modèle Eawag') {
   drawMap();
 }
 
-// Le mur et le bandeau défilant montrent les dix lieux. Le lieu choisi prend le
-// chiffre affiché en grand — mesure officielle comprise — pour que sa tuile ne
-// contredise pas l'écran ; les autres viennent du modèle.
+// Les bocaux montrent les dix lieux. Le lieu choisi prend le chiffre affiché en
+// grand — mesure officielle comprise — pour que son bocal ne contredise pas
+// l'écran ; les autres viennent du modèle.
 function renderWall() {
   const temps = { ...spotTemps };
   if (heroValue != null && isFinite(heroValue)) temps[currentSpot.key] = heroValue;
   wall?.setTemps(temps);
-
-  const track = $('tickerTrack');
-  const items = SPOTS.map((s) => {
-    const v = temps[s.key];
-    return `<span>${s.name.toUpperCase()} <b>${isFinite(v) ? `${formatTemp(v)}°` : '—'}</b></span>`;
-  }).join('<i>•</i>');
-  // Deux copies côte à côte : la boucle CSS ne montre jamais de trou.
-  track.innerHTML = `<div>${items}<i>•</i></div><div aria-hidden="true">${items}<i>•</i></div>`;
 }
 
 function drawMap() {
@@ -622,28 +612,35 @@ function init() {
   currentSpot = SPOTS.find((s) => s.key === cacheGet('spot')) || SPOTS[0];
   spotTemps = cacheGet('spotTemps') || {};
 
-  // Le mur d'abord : `syncPicker` et `paint` s'adressent à lui.
-  const canvas = $('wall');
+  // Le carrousel d'abord : `syncPicker` et `paint` s'adressent à lui.
   try {
     wall = initWall({
-      canvas,
+      canvas: $('wall'),
       spots: SPOTS,
       bandOf: (t) => mood(t).band,
       format: formatTemp,
       onSelect: (spot) => selectSpot(spot),
-      onMove: (x, y) => {
-        // Des coordonnées qui défilent avec le geste, comme sur la maquette :
-        // le plan est celui du lac, centré sur Lausanne.
-        $('coordA').textContent = `${(46.5 + y * 0.012).toFixed(4)} N`;
-        $('coordB').textContent = `${(6.63 + x * 0.02).toFixed(4)} E`;
+      // La place libre des bocaux : sous l'en-tête, au-dessus de la pastille.
+      area: (w, h) => {
+        const hero = document.querySelector('.hero');
+        const screen = hero?.parentElement.getBoundingClientRect();
+        const r = hero?.getBoundingClientRect();
+        const bottom = r && screen ? r.top - screen.top - 14 : h * 0.68;
+        return [Math.min(100, h * 0.15), Math.max(h * 0.3, bottom)];
       },
+      // Toucher le bocal central descend vers le détail du lieu.
+      onTap: () => $('now').scrollIntoView({ behavior: 'smooth' }),
     });
   } catch (err) {
     wall = null;
-    note('mur 3D', false, err.message);
+    note('bocaux 3D', false, err.message);
   }
+  // La pastille du lieu change de hauteur avec la phrase du jour : les bocaux
+  // reprennent la place qui reste.
+  const heroBox = document.querySelector('.hero');
+  if (wall && heroBox && 'ResizeObserver' in window) new ResizeObserver(() => wall.relayout()).observe(heroBox);
   document.body.classList.toggle('has-wall', !!wall);
-  note('mur 3D', !!wall, wall ? 'WebGL2' : 'WebGL2 indisponible — fond uni');
+  note('bocaux 3D', !!wall, wall ? 'WebGL2' : 'WebGL2 indisponible — fond uni');
   initFx();
 
   renderPicker();
