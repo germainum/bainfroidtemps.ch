@@ -29,7 +29,7 @@
 <link rel="canonical" href="https://bainfroidtemps.ch/">
 
 <!-- Un seul thème, clair : la barre d'état d'iOS suit le crème de la page. -->
-<meta name="theme-color" content="#fdf3ec">
+<meta name="theme-color" content="#f3ead6">
 <meta name="color-scheme" content="light">
 
 <!-- Open Graph : WhatsApp, Facebook, LinkedIn -->
@@ -158,7 +158,8 @@
 }
 </script>
 
-<link rel="preload" href="fonts/marcellus.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/sniglet-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="fonts/patrick-hand.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="app.css">
 </head>
 <body data-band="unknown">
@@ -203,29 +204,17 @@
   </ul>
 </nav>
 
-<!-- Écran d'accueil : une grande forme bordeaux, un titre sur un arc, et dix
-     bocaux de verre — un par lieu — dessinés en WebGL (`wall.js`). Les bocaux
-     sont décoratifs : la température se lit dans la carte en dessous, et sans
-     WebGL il ne reste que le crème et la forme. -->
+<!-- Écran d'accueil : un panorama en papier découpé, dix tableaux — un par lieu,
+     dans la saison de sa température — dessinés en WebGL (`wall.js`). Le décor
+     est décoratif : la température se lit dans la note posée en bas, et sans
+     WebGL il ne reste que le papier uni. -->
 <section class="screen" id="top">
-  <div class="stage" aria-hidden="true">
-    <svg class="blob" viewBox="0 0 1000 1000">
-      <polygon points="500,130 761,239 870,500 761,761 500,870 239,761 130,500 239,239"
-               transform="rotate(22.5 500 500)"/>
-    </svg>
-    <div class="arc">
-      <svg viewBox="0 0 1000 1000">
-        <defs><path id="arcPath" d="M 500,500 m -430,0 a 430,430 0 1,1 860,0 a 430,430 0 1,1 -860,0"/></defs>
-        <text><textPath href="#arcPath" textLength="2690" lengthAdjust="spacing">BAINS FROIDS • LÉMAN • EAU VIVE •</textPath></text>
-      </svg>
-    </div>
-  </div>
   <canvas id="wall" aria-hidden="true"></canvas>
-  <!-- Le lieu, la température et la phrase du jour, dans une pastille crème. -->
+  <!-- Le lieu, la température et la phrase du jour, sur une note de papier. -->
   <div class="hero">
     <!-- Choix du lieu : un vrai <select>, donc la roue native d'iOS — plus sûre
          au pouce qu'une liste maison, et lisible par VoiceOver sans effort.
-         Les bocaux offrent le même choix, au toucher. -->
+         Le décor offre le même choix, au toucher. -->
     <p class="whereat">
       <label for="spot">Je m’immerge à</label>
       <span class="pick">
