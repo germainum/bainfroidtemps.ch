@@ -56,27 +56,36 @@ Dix lieux sont proposés, des Pâquis au Bouveret. On passe de l'un à l'autre p
 **tuile du mur** (voir ci-dessous), par un **point de la carte**, par la liste
 déroulante, ou par les flèches du clavier, qui suivent l'ordre du lac.
 
-### Les bocaux
+### Le diorama
 
-L'écran d'accueil s'inspire de la ferme Agrumea : fond crème, grande forme
-bordeaux, titre sur un arc et **dix bocaux de verre en WebGL2** (`wall.js`), un
-par lieu. Le niveau d'eau monte avec la température, sa teinte suit la bande de
-froid, l'étiquette porte le nom et le chiffre.
+Le site est un **panorama en papier découpé**, d'après une maquette de diorama :
+dix tableaux posés en rond autour du spectateur (`wall.js`, WebGL2), un par lieu.
+Chaque tableau prend la **saison de sa température** — hiver bleu, glaçons et
+bonhomme de neige quand l'eau est mordante ; sapins et montagnes enneigées quand
+elle est froide ; printemps vert, arbre et fleurs quand elle est fraîche ; été
+orange, soleil et parasol quand elle est bonne ; cactus et grand soleil quand elle
+est chaude. Une étiquette punaisée porte le nom et le chiffre, cousue de rouge sur
+le lieu choisi.
 
-- **Glisser** (ou la molette horizontale) fait tourner le carrousel ; les bocaux
-  se rangent sur le plus proche, et celui du centre devient le lieu choisi.
-- **Toucher** un bocal voisin le ramène au centre ; toucher celui du centre
+- **Glisser** (ou la molette horizontale) fait tourner le décor ; il se range sur
+  le tableau le plus proche, qui devient le lieu choisi.
+- **Toucher** un tableau voisin le ramène au centre ; toucher celui du centre
   descend vers le détail.
-- **Survoler** un bocal le soulève et l'incline vers le curseur.
-- Le **menu** plein écran (orange, grands liens en serif) ouvre les sections du
-  texte rédigé.
-- La forme et l'arc tournent quand on descend ; les blocs entrent au défilement.
+- **Bouger le curseur** décale la caméra : un peu de parallaxe entre les feuilles.
+- Le **menu** plein écran (papier orange, liens en bandes de couleur) ouvre les
+  sections du texte rédigé.
 
-Chaque bocal est un quad en perspective dont le fragment shader dessine tout
-(verre, eau, couvercle, étiquette) ; la même projection sert à savoir quel bocal
-est sous le doigt. La définition baisse toute seule si l'appareil peine. Sans
-WebGL2, ou avec `prefers-reduced-motion`, les bocaux disparaissent ou se figent :
-la température se lit dans la pastille. Aucune dépendance.
+Tout le papier est calculé dans un seul fragment shader, **sans aucune image** :
+chaque pixel remonte son rayon jusqu'à des cylindres concentriques (le mur, la
+couche du milieu) et au sol, où des formes à distance signée sont peintes comme
+des feuilles superposées, avec leur ombre portée et un grain. La définition baisse
+toute seule si l'appareil peine. Sans WebGL2, ou avec `prefers-reduced-motion`, le
+décor disparaît ou se fige : la température se lit sur la note posée en bas.
+Aucune dépendance.
+
+Le reste de la page est fait de la même matière : feuilles de couleur aux bords
+irrégulières, ombres, couture en pointillé, étiquettes punaisées (voir les jetons
+en tête de `app.css`).
 
 Pour ajouter un lieu, complétez la constante `SPOTS` dans `sources.js` : le point
 doit se situer **sur l'eau**, sinon la simulation ne renvoie rien.
@@ -135,7 +144,7 @@ durée totale : entrée dans l'eau (respiration), régime stable (rester près d
 bord), puis préparation de la sortie. À l'échéance, il compte le dépassement
 plutôt que de s'arrêter en silence.
 
-**L'écran change de nature** dès le lancement : le fond passe au bordeaux. On ne
+**L'écran change de nature** dès le lancement : le fond passe au bleu du lac. On ne
 lit plus une donnée, on traverse un moment. Les jetons de couleur sont redéfinis
 sur le conteneur du minuteur, ce qui teinte d'un coup tout ce qu'il contient.
 
@@ -177,9 +186,9 @@ l'audio. L'écran le rappelle plutôt que de le taire.
 ## Soutien et contact
 
 Deux liens en bas de page, à des niveaux d'insistance distincts du bouton de
-lancement — qui garde seul le rouge-orangé plein :
+lancement — qui garde seul l'orange plein :
 
-- **« Offre-moi un café »**, pastille à filet, vers
+- **« Offre-moi un café »**, feuille de papier crème, vers
   [paypal.me/germainlot](https://paypal.me/germainlot) ;
 - **« Contactez-moi sur WhatsApp »**, contour seul, pour une demande de création
   d'application. Le message est prérempli. Le libellé nomme WhatsApp : une
@@ -378,10 +387,10 @@ utile depuis l'iPhone lui-même, il liste les appels réussis ou échoués.
 | Fichier | Rôle |
 | --- | --- |
 | `index.html` | structure de la page et métadonnées iOS |
-| `app.css` | mise en forme (thème clair unique), menu plein écran, encoches d'écran |
-| `wall.js` | les bocaux : scène WebGL2, eau, étiquettes, interactions |
-| `fx.js` | menu plein écran, apparition des blocs, rotation de la forme au défilement |
-| `fonts/marcellus.woff2` | police des titres (Marcellus, licence OFL, voir `fonts/MARCELLUS-LICENSE.txt`) |
+| `app.css` | mise en forme : papier fait main (thème clair unique), menu plein écran, encoches d'écran |
+| `wall.js` | le diorama : scène WebGL2 procédurale, saisons, interactions |
+| `fx.js` | menu plein écran, apparition des blocs au défilement |
+| `fonts/` | Sniglet (titres) et Patrick Hand (texte), licence OFL, hébergées ici |
 | `sources.js` | URL, analyse des réponses, choix de la valeur — sans DOM ni réseau |
 | `app.js` | requêtes, cache local, rendu, cycle de vie |
 | `bath.js` | minuteur : consignes, maintien de confirmation, phases, session |
